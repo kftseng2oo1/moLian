@@ -139,6 +139,7 @@
 
     <div id="loading"><span class="pulse">🖌️ 揮毫中，請稍候...</span></div>
     <div id="error-box"></div>
+    <div id="raw-box" style="display:none;background:#111;border:1px solid #333;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;font-family:monospace;color:#aaa;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;"><b style='color:#ffd700'>📄 AI 原始回傳：</b><br><span id="raw-content"></span></div>
 
     <div id="display-area">
         <div class="horizontal" id="horizontal"></div>
@@ -302,25 +303,37 @@ async function generateAction() {
         if (!res) throw new Error('嘗試了 ' + modelList.length + ' 個模型均失敗。最後錯誤：' + lastErr);
 
         var data = await res.json();
-        var text = (data.candidates &&
-                    data.candidates[0] &&
-                    data.candidates[0].content &&
-                    data.candidates[0].content.parts &&
-                    data.candidates[0].content.parts[0] &&
-                    data.candidates[0].content.parts[0].text) || '';
+        // 取出回傳文字
+        var text = '';
+        if (data.candidates && data.candidates[0] && data.candidates[0].content &&
+            data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
+            text = data.candidates[0].content.parts[0].text || '';
+        }
 
         if (!text) {
             var reason = (data.candidates && data.candidates[0] && data.candidates[0].finishReason) || '未知';
-            throw new Error('回傳為空，原因：' + reason);
+            throw new Error('回傳為空(finishReason:' + reason + ')，raw：' + JSON.stringify(data).slice(0, 200));
         }
 
-        // 清理 markdown，抓取 JSON
-        var clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        var match = clean.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error('找不到 JSON，回傳：' + clean.slice(0, 100));
+        // 顯示原始回傳以便除錯
+        showRaw(text);
 
-        var result = JSON.parse(match[0]);
-        if (!result.upper || !result.lower || !result.horizontal) throw new Error('欄位不完整');
+        // 強化 JSON 解析
+        var cleaned = text
+            .replace(/^\s*```json\s*/i, '')
+            .replace(/^\s*```\s*/i, '')
+            .replace(/\s*```\s*$/i, '')
+            .trim();
+        var jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('找不到 JSON，原始：' + text.slice(0, 150));
+
+        var result;
+        try { result = JSON.parse(jsonMatch[0]); }
+        catch(pe) { throw new Error('JSON解析失敗：' + pe.message + '，內容：' + jsonMatch[0].slice(0, 150)); }
+
+        if (!result.upper || !result.lower || !result.horizontal) {
+            throw new Error('欄位不完整：' + JSON.stringify(result).slice(0, 150));
+        }
 
         currentResult = result;
         renderCouplet();
@@ -329,6 +342,15 @@ async function generateAction() {
         showError('生成失敗：' + err.message);
     } finally {
         setLoading(false);
+    }
+}
+
+function showRaw(text) {
+    var box = document.getElementById('raw-box');
+    var span = document.getElementById('raw-content');
+    if (box && span) {
+        span.textContent = text;
+        box.style.display = 'block';
     }
 }
 
