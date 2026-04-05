@@ -365,7 +365,7 @@ function renderCouplet() {
     document.getElementById('horizontal').textContent = currentResult.horizontal;
     document.getElementById('analysis').textContent = currentResult.analysis || '';
     document.getElementById('display-area').style.display = 'block';
-    document.getElementById('display-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function saveToHistory() {
@@ -422,7 +422,8 @@ function clearDisplay() {
 
 function setLoading(on) {
     document.getElementById('loading').style.display = on ? 'block' : 'none';
-    document.getElementById('display-area').style.display = 'none';
+    // 只在開始載入時隱藏對聯，結束時不動它（由 renderCouplet 控制）
+    if (on) document.getElementById('display-area').style.display = 'none';
     document.getElementById('gen-btn').disabled = on;
     document.getElementById('gen-btn').textContent = on ? '生成中...' : '生成對聯';
 }
