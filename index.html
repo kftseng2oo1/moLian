@@ -276,11 +276,16 @@ async function generateAction() {
                 });
                 clearTimeout(timeoutId);
 
-                if (r.status === 404) { lastErr = model + ' 不存在'; continue; }
-                if (r.status === 429) { lastErr = model + ' 額度超限'; continue; }
+                if (r.status === 404) { lastErr = model + ':404不存在'; continue; }
+                if (r.status === 429) { lastErr = model + ':429額度超限'; continue; }
+                if (r.status === 400) {
+                    var e400 = await r.json().catch(function() { return {}; });
+                    lastErr = model + ':400(' + ((e400.error && e400.error.message) || '?') + ')';
+                    continue;
+                }
                 if (!r.ok) {
                     var e = await r.json().catch(function() { return {}; });
-                    lastErr = (e.error && e.error.message) || ('HTTP ' + r.status);
+                    lastErr = model + ':HTTP' + r.status + '(' + ((e.error && e.error.message) || '?') + ')';
                     continue;
                 }
                 res = r;
@@ -292,7 +297,7 @@ async function generateAction() {
             }
         }
 
-        if (!res) throw new Error('所有模型均失敗：' + lastErr);
+        if (!res) throw new Error('嘗試了 ' + modelList.length + ' 個模型均失敗。最後錯誤：' + lastErr);
 
         var data = await res.json();
         var text = (data.candidates &&
