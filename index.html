@@ -337,6 +337,9 @@ async function generateAction() {
         }
 
         currentResult = result;
+        // 成功後隱藏原始回傳框
+        var rb = document.getElementById('raw-box');
+        if (rb) rb.style.display = 'none';
         renderCouplet();
 
     } catch(err) {
