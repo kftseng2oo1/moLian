@@ -110,18 +110,6 @@
         }
         #toast.show { opacity:1; }
     </style>
-
-<!-- PWA Meta — auto-injected by PWA 打包神器 -->
-<meta name="application-name" content="AI春聯">
-<meta name="description" content="">
-<meta name="theme-color" content="#1a73e8">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="AI春聯">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon.svg">
-<script>if('serviceWorker'in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').then(function(r){console.log('[SW] registered:',r.scope)}).catch(function(e){console.warn('[SW] failed:',e)});});}</script>
 </head>
 <body>
 <div class="container">
@@ -242,14 +230,25 @@ async function generateAction() {
             var model = MODELS[i];
             var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
             try {
+                // 30 秒 timeout
+                var controller = new AbortController();
+                var timeoutId = setTimeout(function() { controller.abort(); }, 30000);
+
                 var r = await fetch(url, {
                     method: 'POST',
+                    signal: controller.signal,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: { temperature: 0.8, maxOutputTokens: 4096 }
+                        generationConfig: {
+                            temperature: 0.8,
+                            maxOutputTokens: 1024,
+                            thinkingConfig: { thinkingBudget: 0 }
+                        }
                     })
                 });
+                clearTimeout(timeoutId);
+
                 if (r.status === 404) { lastErr = model + ' 不存在'; continue; }
                 if (r.status === 429) { lastErr = model + ' 額度超限'; continue; }
                 if (!r.ok) {
@@ -260,7 +259,9 @@ async function generateAction() {
                 res = r;
                 break;
             } catch(fe) {
-                lastErr = fe.message; continue;
+                if (fe.name === 'AbortError') { lastErr = model + ' 逾時(30s)'; } 
+                else { lastErr = fe.message; }
+                continue;
             }
         }
 
