@@ -102,7 +102,13 @@
         .history-text { font-size:14px; line-height:1.6; flex:1; text-align:left; cursor:pointer; }
         .empty-hint { text-align:center; color:#bbb; font-size:14px; padding:20px; }
 
-        #toast {
+        .words-btn {
+        padding: 6px 14px; border: 1px solid #ccc; border-radius: 20px;
+        background: white; color: #888; font-size: 13px; cursor: pointer;
+        font-family: inherit; transition: all .15s;
+    }
+    .words-btn.active { background: #d32f2f; color: #ffd700; border-color: #d32f2f; font-weight: bold; }
+    #toast {
             position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
             background:#222; color:white; padding:10px 22px;
             border-radius:22px; font-size:14px; z-index:9999;
@@ -110,6 +116,18 @@
         }
         #toast.show { opacity:1; }
     </style>
+
+<!-- PWA Meta — auto-injected by PWA 打包神器 -->
+<meta name="application-name" content="AI 春聯">
+<meta name="description" content="">
+<meta name="theme-color" content="#1a73e8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="AI 春聯">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<script>if('serviceWorker'in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').then(function(r){console.log('[SW] registered:',r.scope)}).catch(function(e){console.warn('[SW] failed:',e)});});}</script>
 </head>
 <body>
 <div class="container">
@@ -132,6 +150,13 @@
         <button class="btn green" id="check-key-btn" style="width:100%;padding:8px;font-size:13px;">🔍 查詢可用模型</button>
     </div>
 
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+        <span style="font-size:13px;color:#888;">字數：</span>
+        <button class="words-btn active" data-words="5">五字</button>
+        <button class="words-btn" data-words="6">六字</button>
+        <button class="words-btn" data-words="7">七字</button>
+        <button class="words-btn" data-words="0">不限</button>
+    </div>
     <div class="input-row">
         <input type="text" id="keyword" placeholder="例如：新家、恭喜、台中...">
         <button class="btn" id="gen-btn">生成對聯</button>
@@ -230,6 +255,15 @@ document.getElementById('check-key-btn').addEventListener('click', async functio
     }
 });
 
+var selectedWords = 5;
+document.querySelectorAll('.words-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.words-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        selectedWords = parseInt(btn.dataset.words);
+    });
+});
+
 document.getElementById('gen-btn').addEventListener('click', generateAction);
 document.getElementById('keyword').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') generateAction();
@@ -248,8 +282,11 @@ async function generateAction() {
     setLoading(true);
     hideError();
 
+    var wordsRule = selectedWords > 0
+        ? '上下聯必須各為【' + selectedWords + '個字】，不得多也不得少。'
+        : '上下聯字數相同（5至7字均可）。';
     var prompt = '你是精通漢語對聯的文學家，請根據關鍵字「' + keyword + '」創作一副對聯。\n\n'
-        + '規則：上下聯字數相同（5-7字），上聯末仄聲，下聯末平聲，橫批4字。\n\n'
+        + '【字數規定】' + wordsRule + '上聯末字仄聲，下聯末字平聲，橫批4字。\n\n'
         + '只回傳 JSON，禁止使用 markdown，analysis 限10字：\n'
         + '{"upper":"上聯","lower":"下聯","horizontal":"橫批","analysis":"賞析"}';
 
