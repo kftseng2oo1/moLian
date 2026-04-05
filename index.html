@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>墨聯 AI 對聯產生器</title>
+    <style>
+        :root { --red:#d32f2f; --dark-red:#b71c1c; --gold:#ffd700; --bg:#f4f1ea; }
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body {
+            font-family:"Microsoft JhengHei","PingFang TC",sans-serif;
+            background:var(--bg); min-height:100vh;
+            display:flex; flex-direction:column; align-items:center;
+            padding:20px 16px 40px;
+        }
+        .container { max-width:560px; width:100%; }
+        header { text-align:center; margin-bottom:20px; }
+        header h1 { font-size:26px; color:#1a1a1a; }
+        header p { font-size:14px; color:#888; margin-top:4px; }
+
+        .input-row { display:flex; gap:10px; margin-bottom:16px; }
+        .input-row input {
+            flex:1; padding:12px 14px; border:2px solid #ccc; border-radius:10px;
+            font-size:16px; font-family:inherit; outline:none;
+        }
+        .input-row input:focus { border-color:var(--red); }
+
+        .btn {
+            padding:12px 20px; background:var(--red); color:white;
+            border:none; border-radius:10px; font-size:15px; font-weight:bold;
+            font-family:inherit; cursor:pointer; white-space:nowrap;
+        }
+        .btn:disabled { background:#aaa; cursor:not-allowed; }
+        .btn.amber { background:#e67e22; }
+        .btn.gray  { background:#7f8c8d; }
+        .btn.green { background:#388e3c; }
+        .btn.small { padding:6px 12px; font-size:12px; border-radius:6px; }
+
+        #apikey-section {
+            background:#fffde7; border:1px solid #ffe082;
+            border-radius:10px; padding:12px 14px; margin-bottom:16px;
+        }
+        #apikey-section .guide { font-size:12px; color:#795548; margin-bottom:8px; line-height:1.7; }
+        #apikey-section .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+        #apikey-section input {
+            flex:1; padding:10px 12px; border:1px solid #fbc02d; border-radius:8px;
+            font-size:13px; font-family:monospace; background:white;
+        }
+        #apikey-section .hint { font-size:11px; color:#aaa; margin-bottom:8px; }
+
+        #model-list {
+            display:none; background:#e8f5e9; border:1px solid #a5d6a7;
+            border-radius:8px; padding:10px 12px; margin-bottom:8px;
+            font-size:12px; font-family:monospace; color:#333; line-height:1.8;
+        }
+
+        #loading { display:none; text-align:center; padding:24px; font-size:18px; color:#888; }
+        .pulse { animation:pulse 1.2s ease-in-out infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+        #error-box {
+            display:none; background:#fff0f0; border:1px solid #ffcdd2;
+            color:var(--dark-red); padding:12px 16px; border-radius:8px;
+            font-size:14px; margin-bottom:12px; line-height:1.6;
+        }
+
+        #display-area { display:none; text-align:center; animation:fadeIn 0.7s ease; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+        .horizontal {
+            display:inline-block; background:var(--red); color:var(--gold);
+            border:3px solid var(--gold); padding:10px 28px;
+            font-size:26px; font-weight:bold; letter-spacing:8px;
+            box-shadow:0 4px 12px rgba(0,0,0,0.2); margin-bottom:24px;
+        }
+        .pillars { display:flex; justify-content:center; gap:36px; margin-bottom:20px; }
+        .pillar-wrap { display:flex; flex-direction:column; align-items:center; }
+        .pillar {
+            background:var(--red); color:var(--gold);
+            border:3px solid var(--gold); padding:20px 12px;
+            width:58px; min-height:140px; font-size:28px;
+            font-weight:bold; letter-spacing:4px;
+            box-shadow:4px 4px 16px rgba(0,0,0,0.3);
+            writing-mode:vertical-rl; text-orientation:upright;
+            display:flex; align-items:center; justify-content:center;
+        }
+        .pillar-label { font-size:12px; color:#999; margin-top:6px; }
+        .analysis {
+            background:white; border-left:4px solid var(--red);
+            padding:14px 18px; border-radius:6px; font-size:14px;
+            color:#444; line-height:1.9; text-align:left; margin-bottom:16px;
+        }
+        .action-row { display:flex; gap:10px; justify-content:center; margin-bottom:8px; }
+        .divider { border:none; border-top:2px dashed #ccc; margin:36px 0 20px; }
+        .history-header { text-align:center; font-size:17px; font-weight:bold; color:#444; margin-bottom:8px; }
+        .history-hint { text-align:center; font-size:12px; color:#bbb; margin-bottom:12px; }
+        .history-item {
+            background:white; border-left:5px solid var(--red);
+            padding:10px 12px; margin-bottom:8px; border-radius:0 6px 6px 0;
+            display:flex; justify-content:space-between; align-items:center; gap:8px;
+        }
+        .history-text { font-size:14px; line-height:1.6; flex:1; text-align:left; cursor:pointer; }
+        .empty-hint { text-align:center; color:#bbb; font-size:14px; padding:20px; }
+
+        #toast {
+            position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
+            background:#222; color:white; padding:10px 22px;
+            border-radius:22px; font-size:14px; z-index:9999;
+            opacity:0; transition:opacity 0.3s; pointer-events:none; white-space:nowrap;
+        }
+        #toast.show { opacity:1; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <header>
+        <h1>🖋️ 墨聯 AI 產生器</h1>
+        <p>輸入關鍵字，由 AI 生成專屬對聯</p>
+    </header>
+
+    <div id="apikey-section">
+        <div class="guide">
+            🔑 需要 Gemini API Key：前往 <b>aistudio.google.com</b> → Get API Key → 複製貼入
+        </div>
+        <div class="row">
+            <input type="password" id="apikey" placeholder="AIzaSy...">
+            <button class="btn amber" id="save-key-btn">記住</button>
+        </div>
+        <div class="hint">僅存於本機，不會上傳</div>
+        <div id="model-list"></div>
+        <button class="btn green" id="check-key-btn" style="width:100%;padding:8px;font-size:13px;">🔍 查詢可用模型</button>
+    </div>
+
+    <div class="input-row">
+        <input type="text" id="keyword" placeholder="例如：新家、恭喜、台中...">
+        <button class="btn" id="gen-btn">生成對聯</button>
+    </div>
+
+    <div id="loading"><span class="pulse">🖌️ 揮毫中，請稍候...</span></div>
+    <div id="error-box"></div>
+
+    <div id="display-area">
+        <div class="horizontal" id="horizontal"></div>
+        <div class="pillars">
+            <div class="pillar-wrap">
+                <div class="pillar" id="upper"></div>
+                <div class="pillar-label">上聯</div>
+            </div>
+            <div class="pillar-wrap">
+                <div class="pillar" id="lower"></div>
+                <div class="pillar-label">下聯</div>
+            </div>
+        </div>
+        <div class="analysis" id="analysis"></div>
+        <div class="action-row">
+            <button class="btn amber" id="save-btn">⭐ 收藏此副</button>
+            <button class="btn gray"  id="clear-btn">清除</button>
+        </div>
+    </div>
+
+    <hr class="divider">
+    <div class="history-header">📜 我的收藏紀錄</div>
+    <div class="history-hint">最多保留 5 副・點擊可重新顯示</div>
+    <div id="history-list"></div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+var currentResult = null;
+var toastTimer = null;
+var MODELS = ['gemini-2.5-flash','gemini-2.0-flash','gemini-2.0-flash-lite','gemini-flash-latest'];
+
+function getApiKey() {
+    return localStorage.getItem('gemini_api_key') || '';
+}
+
+document.getElementById('save-key-btn').addEventListener('click', function() {
+    var key = document.getElementById('apikey').value.trim();
+    if (!key.startsWith('AIza')) { showToast('格式不對，應以 AIza 開頭'); return; }
+    localStorage.setItem('gemini_api_key', key);
+    document.getElementById('apikey-section').style.opacity = '0.6';
+    showToast('✅ API Key 已儲存');
+});
+
+document.getElementById('check-key-btn').addEventListener('click', async function() {
+    var apiKey = document.getElementById('apikey').value.trim() || getApiKey();
+    if (!apiKey) { showToast('請先填入 Key'); return; }
+    var box = document.getElementById('model-list');
+    box.style.display = 'block';
+    box.textContent = '查詢中...';
+    try {
+        var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey);
+        var data = await res.json();
+        if (data.error) { box.textContent = '錯誤：' + data.error.message; return; }
+        var names = (data.models || [])
+            .filter(function(m) { return m.supportedGenerationMethods && m.supportedGenerationMethods.indexOf('generateContent') >= 0; })
+            .map(function(m) { return m.name.replace('models/', ''); });
+        box.innerHTML = '<b>✅ 可用模型：</b><br>' + names.join('<br>');
+    } catch(e) {
+        box.textContent = '查詢失敗：' + e.message;
+    }
+});
+
+document.getElementById('gen-btn').addEventListener('click', generateAction);
+document.getElementById('keyword').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') generateAction();
+});
+document.getElementById('save-btn').addEventListener('click', saveToHistory);
+document.getElementById('clear-btn').addEventListener('click', clearDisplay);
+
+async function generateAction() {
+    var keyword = document.getElementById('keyword').value.trim();
+    if (!keyword) { showToast('請輸入關鍵字'); return; }
+    var apiKey = getApiKey();
+    if (!apiKey) { showError('請先填入 Gemini API Key'); return; }
+
+    setLoading(true);
+    hideError();
+
+    var prompt = '你是精通漢語對聯的文學家，請根據關鍵字「' + keyword + '」創作一副對聯。\n\n'
+        + '規則：上下聯字數相同（5-7字），上聯末仄聲，下聯末平聲，橫批4字。\n\n'
+        + '只回傳 JSON，禁止使用 markdown，analysis 限10字：\n'
+        + '{"upper":"上聯","lower":"下聯","horizontal":"橫批","analysis":"賞析"}';
+
+    try {
+        var res = null, lastErr = '';
+        for (var i = 0; i < MODELS.length; i++) {
+            var model = MODELS[i];
+            var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+            try {
+                var r = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.8, maxOutputTokens: 4096 }
+                    })
+                });
+                if (r.status === 404) { lastErr = model + ' 不存在'; continue; }
+                if (r.status === 429) { lastErr = model + ' 額度超限'; continue; }
+                if (!r.ok) {
+                    var e = await r.json().catch(function() { return {}; });
+                    lastErr = (e.error && e.error.message) || ('HTTP ' + r.status);
+                    continue;
+                }
+                res = r;
+                break;
+            } catch(fe) {
+                lastErr = fe.message; continue;
+            }
+        }
+
+        if (!res) throw new Error('所有模型均失敗：' + lastErr);
+
+        var data = await res.json();
+        var text = (data.candidates &&
+                    data.candidates[0] &&
+                    data.candidates[0].content &&
+                    data.candidates[0].content.parts &&
+                    data.candidates[0].content.parts[0] &&
+                    data.candidates[0].content.parts[0].text) || '';
+
+        if (!text) {
+            var reason = (data.candidates && data.candidates[0] && data.candidates[0].finishReason) || '未知';
+            throw new Error('回傳為空，原因：' + reason);
+        }
+
+        // 清理 markdown，抓取 JSON
+        var clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        var match = clean.match(/\{[\s\S]*\}/);
+        if (!match) throw new Error('找不到 JSON，回傳：' + clean.slice(0, 100));
+
+        var result = JSON.parse(match[0]);
+        if (!result.upper || !result.lower || !result.horizontal) throw new Error('欄位不完整');
+
+        currentResult = result;
+        renderCouplet();
+
+    } catch(err) {
+        showError('生成失敗：' + err.message);
+    } finally {
+        setLoading(false);
+    }
+}
+
+function renderCouplet() {
+    if (!currentResult) return;
+    document.getElementById('upper').textContent = currentResult.upper;
+    document.getElementById('lower').textContent = currentResult.lower;
+    document.getElementById('horizontal').textContent = currentResult.horizontal;
+    document.getElementById('analysis').textContent = currentResult.analysis || '';
+    document.getElementById('display-area').style.display = 'block';
+    document.getElementById('display-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function saveToHistory() {
+    if (!currentResult) return;
+    var h = getHistory();
+    if (h.some(function(x) { return x.upper === currentResult.upper; })) { showToast('此副已在收藏中'); return; }
+    h.unshift(currentResult);
+    localStorage.setItem('couplet_history', JSON.stringify(h.slice(0, 5)));
+    renderHistory(); showToast('✅ 已存入收藏！');
+}
+
+function deleteItem(i) {
+    var h = getHistory(); h.splice(i, 1);
+    localStorage.setItem('couplet_history', JSON.stringify(h));
+    renderHistory(); showToast('已刪除');
+}
+
+function loadItem(i) {
+    var item = getHistory()[i];
+    if (!item) return;
+    currentResult = item; renderCouplet();
+}
+
+function getHistory() {
+    try { return JSON.parse(localStorage.getItem('couplet_history') || '[]'); } catch(e) { return []; }
+}
+
+function renderHistory() {
+    var list = document.getElementById('history-list');
+    var h = getHistory();
+    if (!h.length) { list.innerHTML = '<div class="empty-hint">尚無收藏</div>'; return; }
+    list.innerHTML = '';
+    h.forEach(function(item, i) {
+        var row = document.createElement('div');
+        row.className = 'history-item';
+        var span = document.createElement('span');
+        span.className = 'history-text';
+        span.textContent = item.horizontal + '｜' + item.upper + ' ／ ' + item.lower;
+        span.addEventListener('click', function() { loadItem(i); });
+        var del = document.createElement('button');
+        del.className = 'btn gray small';
+        del.textContent = '刪除';
+        del.addEventListener('click', function() { deleteItem(i); });
+        row.appendChild(span); row.appendChild(del);
+        list.appendChild(row);
+    });
+}
+
+function clearDisplay() {
+    document.getElementById('display-area').style.display = 'none';
+    document.getElementById('keyword').value = '';
+    currentResult = null;
+}
+
+function setLoading(on) {
+    document.getElementById('loading').style.display = on ? 'block' : 'none';
+    document.getElementById('display-area').style.display = 'none';
+    document.getElementById('gen-btn').disabled = on;
+    document.getElementById('gen-btn').textContent = on ? '生成中...' : '生成對聯';
+}
+
+function showError(msg) {
+    var el = document.getElementById('error-box');
+    el.textContent = msg; el.style.display = 'block';
+}
+function hideError() { document.getElementById('error-box').style.display = 'none'; }
+
+function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() { t.classList.remove('show'); }, 2500);
+}
+
+// 初始化
+renderHistory();
+var _k = getApiKey();
+if (_k) {
+    document.getElementById('apikey').value = _k;
+    document.getElementById('apikey-section').style.opacity = '0.6';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B0000"/>
+      <stop offset="100%" style="stop-color:#d32f2f"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fff8dc"/>
+      <stop offset="100%" style="stop-color:#ffd700"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景圓角方形（紅色） -->
+  <rect width="512" height="512" rx="100" fill="url(#bg)"/>
+
+  <!-- 外框金邊 -->
+  <rect x="18" y="18" width="476" height="476" rx="88" fill="none" stroke="#ffd700" stroke-width="8"/>
+  <rect x="30" y="30" width="452" height="452" rx="78" fill="none" stroke="#ffd700" stroke-width="3" opacity="0.5"/>
+
+  <!-- 左側春聯柱 -->
+  <rect x="80" y="90" width="90" height="332" rx="8" fill="#b71c1c" stroke="#ffd700" stroke-width="4"/>
+  <!-- 左柱文字：墨 -->
+  <text x="125" y="175" text-anchor="middle" font-family="serif" font-size="72" font-weight="bold" fill="url(#gold)">墨</text>
+  <!-- 左柱文字：聯 -->
+  <text x="125" y="265" text-anchor="middle" font-family="serif" font-size="72" font-weight="bold" fill="url(#gold)">聯</text>
+  <!-- 左柱文字：AI -->
+  <text x="125" y="380" text-anchor="middle" font-family="serif" font-size="44" font-weight="bold" fill="url(#gold)" opacity="0.9">AI</text>
+
+  <!-- 右側春聯柱 -->
+  <rect x="342" y="90" width="90" height="332" rx="8" fill="#b71c1c" stroke="#ffd700" stroke-width="4"/>
+  <!-- 右柱裝飾菱形圖案 -->
+  <text x="387" y="175" text-anchor="middle" font-family="serif" font-size="72" font-weight="bold" fill="url(#gold)">詩</text>
+  <text x="387" y="265" text-anchor="middle" font-family="serif" font-size="72" font-weight="bold" fill="url(#gold)">書</text>
+  <text x="387" y="370" text-anchor="middle" font-family="serif" font-size="52" font-weight="bold" fill="url(#gold)">香</text>
+
+  <!-- 中間頂部橫批 -->
+  <rect x="80" y="44" width="352" height="36" rx="6" fill="#8B0000" stroke="#ffd700" stroke-width="3"/>
+  <text x="256" y="70" text-anchor="middle" font-family="serif" font-size="22" font-weight="bold" fill="#ffd700" letter-spacing="8">文采風華</text>
+
+  <!-- 中間底部裝飾 -->
+  <rect x="190" y="430" width="132" height="6" rx="3" fill="#ffd700" opacity="0.7"/>
+
+  <!-- 中間毛筆圖示 -->
+  <g transform="translate(256,290) rotate(-30)">
+    <!-- 筆桿 -->
+    <rect x="-6" y="-80" width="12" height="100" rx="4" fill="#8B4513"/>
+    <!-- 筆頭 -->
+    <ellipse cx="0" cy="28" rx="7" ry="18" fill="#333"/>
+    <!-- 筆尖 -->
+    <polygon points="0,50 -4,28 4,28" fill="#1a1a1a"/>
+    <!-- 筆墨滴 -->
+    <circle cx="0" cy="56" r="5" fill="#1a1a1a" opacity="0.8"/>
+  </g>
+</svg>
