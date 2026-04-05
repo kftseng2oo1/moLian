@@ -171,6 +171,7 @@
 var currentResult = null;
 var toastTimer = null;
 var MODELS = ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-2.0-flash-lite'];
+var discoveredModels = []; // 查詢可用模型後動態填入
 
 function getApiKey() {
     return localStorage.getItem('gemini_api_key') || '';
@@ -194,10 +195,35 @@ document.getElementById('check-key-btn').addEventListener('click', async functio
         var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey);
         var data = await res.json();
         if (data.error) { box.textContent = '錯誤：' + data.error.message; return; }
-        var names = (data.models || [])
-            .filter(function(m) { return m.supportedGenerationMethods && m.supportedGenerationMethods.indexOf('generateContent') >= 0; })
+
+        // 只保留 gemini 文字生成模型（排除 image/tts/robotics 等）
+        var all = (data.models || [])
+            .filter(function(m) {
+                return m.supportedGenerationMethods &&
+                       m.supportedGenerationMethods.indexOf('generateContent') >= 0 &&
+                       m.name.indexOf('gemini') >= 0 &&
+                       m.name.indexOf('image') < 0 &&
+                       m.name.indexOf('tts') < 0 &&
+                       m.name.indexOf('robotics') < 0 &&
+                       m.name.indexOf('computer-use') < 0;
+            })
             .map(function(m) { return m.name.replace('models/', ''); });
-        box.innerHTML = '<b>✅ 可用模型：</b><br>' + names.join('<br>');
+
+        discoveredModels = all;
+
+        // 優先順序：2.5-flash > 2.5-pro > 2.0-flash > 其他
+        var priority = ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-2.0-flash-lite'];
+        var sorted = [];
+        priority.forEach(function(p) {
+            if (all.indexOf(p) >= 0) sorted.push(p);
+        });
+        all.forEach(function(m) {
+            if (sorted.indexOf(m) < 0) sorted.push(m);
+        });
+        discoveredModels = sorted;
+
+        box.innerHTML = '<b>✅ 已載入 ' + sorted.length + ' 個模型，優先使用：</b> ' + (sorted[0] || '無') + '<br><br>' + sorted.join('<br>');
+        showToast('✅ 模型清單已更新，可直接生成');
     } catch(e) {
         box.textContent = '查詢失敗：' + e.message;
     }
@@ -225,9 +251,10 @@ async function generateAction() {
         + '{"upper":"上聯","lower":"下聯","horizontal":"橫批","analysis":"賞析"}';
 
     try {
+        var modelList = discoveredModels.length > 0 ? discoveredModels : MODELS;
         var res = null, lastErr = '';
-        for (var i = 0; i < MODELS.length; i++) {
-            var model = MODELS[i];
+        for (var i = 0; i < modelList.length; i++) {
+            var model = modelList[i];
             var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
             try {
                 // 30 秒 timeout
