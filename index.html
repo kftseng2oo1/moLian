@@ -318,13 +318,10 @@ async function generateAction() {
         // 顯示原始回傳以便除錯
         showRaw(text);
 
-        // 強化 JSON 解析
-        var cleaned = text
-            .replace(/^\s*```json\s*/i, '')
-            .replace(/^\s*```\s*/i, '')
-            .replace(/\s*```\s*$/i, '')
-            .trim();
-        var jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        // 強化 JSON 解析：直接抓 { } 之間的內容，跳過所有 markdown
+        var jsonMatch = text.match(/\{[\s\S]*?\}/);
+        // 若貪婪匹配更好則用非貪婪後再試貪婪
+        if (!jsonMatch) jsonMatch = text.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('找不到 JSON，原始：' + text.slice(0, 150));
 
         var result;
