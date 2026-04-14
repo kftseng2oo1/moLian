@@ -1,489 +1,619 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>墨聯 AI 對聯產生器</title>
-    <style>
-        :root { --red:#d32f2f; --dark-red:#b71c1c; --gold:#ffd700; --bg:#f4f1ea; }
-        * { box-sizing:border-box; margin:0; padding:0; }
-        body {
-            font-family:"Microsoft JhengHei","PingFang TC",sans-serif;
-            background:var(--bg); min-height:100vh;
-            display:flex; flex-direction:column; align-items:center;
-            padding:20px 16px 40px;
-        }
-        .container { max-width:560px; width:100%; }
-        header { text-align:center; margin-bottom:20px; }
-        header h1 { font-size:26px; color:#1a1a1a; }
-        header p { font-size:14px; color:#888; margin-top:4px; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>墨聯 AI · 對聯產生器</title>
+<style>
+:root {
+  --red: #c0392b;
+  --dark-red: #962d22;
+  --gold: #d4a017;
+  --gold-light: #f0c040;
+  --bg: #faf7f2;
+  --paper: #f5ede0;
+  --ink: #1a0a00;
+  --gray: #888;
+  --border: #d4b896;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+  background: var(--bg);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 0 60px;
+}
 
-        .input-row { display:flex; gap:10px; margin-bottom:16px; }
-        .input-row input {
-            flex:1; padding:12px 14px; border:2px solid #ccc; border-radius:10px;
-            font-size:16px; font-family:inherit; outline:none;
-        }
-        .input-row input:focus { border-color:var(--red); }
+/* ── Header ── */
+header {
+  width: 100%;
+  background: var(--red);
+  color: #fff;
+  text-align: center;
+  padding: 22px 16px 18px;
+  border-bottom: 4px solid var(--gold);
+  position: relative;
+}
+header h1 { font-size: 26px; letter-spacing: 4px; font-weight: 900; }
+header p  { font-size: 13px; opacity: .8; margin-top: 4px; letter-spacing: 2px; }
+.seal {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  width: 46px; height: 46px; border: 2px solid var(--gold-light);
+  border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--gold-light); line-height: 1.3;
+  text-align: center; font-weight: bold; opacity: .85;
+}
 
-        .btn {
-            padding:12px 20px; background:var(--red); color:white;
-            border:none; border-radius:10px; font-size:15px; font-weight:bold;
-            font-family:inherit; cursor:pointer; white-space:nowrap;
-        }
-        .btn:disabled { background:#aaa; cursor:not-allowed; }
-        .btn.amber { background:#e67e22; }
-        .btn.gray  { background:#7f8c8d; }
-        .btn.green { background:#388e3c; }
-        .btn.small { padding:6px 12px; font-size:12px; border-radius:6px; }
+.container { max-width: 600px; width: 100%; padding: 20px 16px 0; }
 
-        #apikey-section {
-            background:#fffde7; border:1px solid #ffe082;
-            border-radius:10px; padding:12px 14px; margin-bottom:16px;
-        }
-        #apikey-section .guide { font-size:12px; color:#795548; margin-bottom:8px; line-height:1.7; }
-        #apikey-section .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
-        #apikey-section input {
-            flex:1; padding:10px 12px; border:1px solid #fbc02d; border-radius:8px;
-            font-size:13px; font-family:monospace; background:white;
-        }
-        #apikey-section .hint { font-size:11px; color:#aaa; margin-bottom:8px; }
+/* ── API Key ── */
+.apikey-section {
+  background: #fff8f0; border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px; margin-bottom: 18px;
+  transition: opacity .4s;
+}
+.apikey-section .guide {
+  font-size: 12px; color: #666; margin-bottom: 10px; line-height: 1.6;
+}
+.apikey-section .guide b { color: var(--red); }
+.row { display: flex; gap: 8px; }
+.hint { font-size: 11px; color: #aaa; margin-top: 6px; }
 
-        #model-list {
-            display:none; background:#e8f5e9; border:1px solid #a5d6a7;
-            border-radius:8px; padding:10px 12px; margin-bottom:8px;
-            font-size:12px; font-family:monospace; color:#333; line-height:1.8;
-        }
+/* ── Input ── */
+.input-row {
+  display: flex; gap: 8px; margin-bottom: 16px;
+}
+input[type=text], input[type=password] {
+  flex: 1; padding: 11px 14px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  font-size: 15px; background: #fff;
+  font-family: inherit; color: var(--ink);
+  outline: none; transition: border-color .2s;
+}
+input[type=text]:focus, input[type=password]:focus {
+  border-color: var(--red);
+}
 
-        #loading { display:none; text-align:center; padding:24px; font-size:18px; color:#888; }
-        .pulse { animation:pulse 1.2s ease-in-out infinite; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+/* ── Buttons ── */
+.btn {
+  padding: 10px 18px; border: none; border-radius: 8px;
+  font-size: 14px; font-weight: bold; cursor: pointer;
+  font-family: inherit; transition: background .15s, transform .1s;
+  white-space: nowrap;
+}
+.btn:active { transform: scale(.96); }
+.btn-red    { background: var(--red); color: #fff; }
+.btn-red:hover { background: var(--dark-red); }
+.btn-gold   { background: var(--gold); color: #fff; }
+.btn-gold:hover { background: #b8870f; }
+.btn-gray   { background: #e8e0d8; color: #555; }
+.btn-gray:hover { background: #d8d0c8; }
+.btn-green  { background: #2e7d32; color: #fff; }
+.btn-green:hover { background: #1b5e20; }
+.btn-share  { background: #1565c0; color: #fff; }
+.btn-share:hover { background: #0d47a1; }
+.btn-png    { background: #4a148c; color: #fff; }
+.btn-png:hover { background: #311b92; }
+.btn-svg    { background: #006064; color: #fff; }
+.btn-svg:hover { background: #004d40; }
+.btn-sm { padding: 7px 12px; font-size: 12px; }
 
-        #error-box {
-            display:none; background:#fff0f0; border:1px solid #ffcdd2;
-            color:var(--dark-red); padding:12px 16px; border-radius:8px;
-            font-size:14px; margin-bottom:12px; line-height:1.6;
-        }
+/* ── Loading / Error ── */
+#loading {
+  display: none; text-align: center;
+  padding: 30px; font-size: 16px; color: var(--red);
+  letter-spacing: 2px;
+}
+.pulse { animation: pulse 1.4s ease-in-out infinite; display: inline-block; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-        #display-area { display:none; text-align:center; animation:fadeIn 0.7s ease; }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+#error-box {
+  display: none; background: #ffebee; border: 1px solid #ef9a9a;
+  border-radius: 8px; padding: 12px 14px; color: #c62828;
+  font-size: 13px; margin-bottom: 14px; line-height: 1.6;
+}
 
-        .horizontal {
-            display:inline-block; background:var(--red); color:var(--gold);
-            border:3px solid var(--gold); padding:10px 28px;
-            font-size:26px; font-weight:bold; letter-spacing:8px;
-            box-shadow:0 4px 12px rgba(0,0,0,0.2); margin-bottom:24px;
-        }
-        .pillars { display:flex; justify-content:center; gap:36px; margin-bottom:20px; }
-        .pillar-wrap { display:flex; flex-direction:column; align-items:center; }
-        .pillar {
-            background:var(--red); color:var(--gold);
-            border:3px solid var(--gold); padding:20px 12px;
-            width:58px; min-height:140px; font-size:28px;
-            font-weight:bold; letter-spacing:4px;
-            box-shadow:4px 4px 16px rgba(0,0,0,0.3);
-            writing-mode:vertical-rl; text-orientation:upright;
-            display:flex; align-items:center; justify-content:center;
-        }
-        .pillar-label { font-size:12px; color:#999; margin-top:6px; }
-        .analysis {
-            background:white; border-left:4px solid var(--red);
-            padding:14px 18px; border-radius:6px; font-size:14px;
-            color:#444; line-height:1.9; text-align:left; margin-bottom:16px;
-        }
-        .action-row { display:flex; gap:10px; justify-content:center; margin-bottom:8px; }
-        .divider { border:none; border-top:2px dashed #ccc; margin:36px 0 20px; }
-        .history-header { text-align:center; font-size:17px; font-weight:bold; color:#444; margin-bottom:8px; }
-        .history-hint { text-align:center; font-size:12px; color:#bbb; margin-bottom:12px; }
-        .history-item {
-            background:white; border-left:5px solid var(--red);
-            padding:10px 12px; margin-bottom:8px; border-radius:0 6px 6px 0;
-            display:flex; justify-content:space-between; align-items:center; gap:8px;
-        }
-        .history-text { font-size:14px; line-height:1.6; flex:1; text-align:left; cursor:pointer; }
-        .empty-hint { text-align:center; color:#bbb; font-size:14px; padding:20px; }
+/* ── 對聯顯示 ── */
+#display-area {
+  display: none; margin-bottom: 20px;
+  animation: fadeIn .6s ease;
+}
+@keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
 
-        .words-btn {
-        padding: 6px 14px; border: 1px solid #ccc; border-radius: 20px;
-        background: white; color: #888; font-size: 13px; cursor: pointer;
-        font-family: inherit; transition: all .15s;
-    }
-    .words-btn.active { background: #d32f2f; color: #ffd700; border-color: #d32f2f; font-weight: bold; }
-    #toast {
-            position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
-            background:#222; color:white; padding:10px 22px;
-            border-radius:22px; font-size:14px; z-index:9999;
-            opacity:0; transition:opacity 0.3s; pointer-events:none; white-space:nowrap;
-        }
-        #toast.show { opacity:1; }
-    </style>
+.horizontal {
+  background: var(--red);
+  color: var(--gold-light);
+  border: 3px solid var(--gold);
+  padding: 10px 28px;
+  font-size: 26px; font-weight: 900;
+  text-align: center;
+  letter-spacing: 8px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  border-radius: 4px;
+}
 
-<!-- PWA Meta — auto-injected by PWA 打包神器 -->
-<meta name="application-name" content="AI 春聯">
-<meta name="description" content="">
-<meta name="theme-color" content="#1a73e8">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="AI 春聯">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon.svg">
-<script>if('serviceWorker'in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').then(function(r){console.log('[SW] registered:',r.scope)}).catch(function(e){console.warn('[SW] failed:',e)});});}</script>
+.pillars {
+  display: flex; justify-content: center; gap: 24px;
+  margin-bottom: 16px;
+}
+.pillar-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pillar {
+  background: var(--red);
+  border: 3px solid var(--gold);
+  color: var(--gold-light);
+  width: 58px; min-height: 180px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px; padding: 14px 0;
+  font-size: 28px; font-weight: 900;
+  letter-spacing: 2px;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  border-radius: 4px;
+  word-break: break-all;
+}
+.pillar-label {
+  font-size: 12px; color: var(--gray); letter-spacing: 1px;
+}
+
+.analysis {
+  background: #fff8f0; border-left: 3px solid var(--gold);
+  border-radius: 0 8px 8px 0; padding: 12px 14px;
+  font-size: 13px; color: #555; line-height: 1.8;
+  margin-bottom: 14px;
+}
+
+/* ── 動作列 ── */
+.action-row {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+/* ── 分隔 & 收藏 ── */
+.divider { border: none; border-top: 1px dashed var(--border); margin: 20px 0 14px; }
+.section-title {
+  font-size: 13px; color: var(--gray);
+  letter-spacing: 2px; margin-bottom: 4px;
+  font-weight: bold;
+}
+.section-hint { font-size: 11px; color: #bbb; margin-bottom: 12px; }
+
+.history-item {
+  display: flex; align-items: center;
+  background: #fff; border: 1px solid #e8ddd0;
+  border-radius: 8px; padding: 10px 12px;
+  margin-bottom: 8px; gap: 10px;
+  cursor: pointer; transition: background .15s;
+}
+.history-item:hover { background: #fff8f0; }
+.history-text { flex: 1; font-size: 13px; color: var(--ink); line-height: 1.6; }
+.history-text .htop { font-weight: bold; color: var(--red); }
+
+/* ── Toast ── */
+#toast {
+  position: fixed; bottom: 28px; left: 50%;
+  transform: translateX(-50%);
+  background: #222; color: #fff;
+  padding: 10px 22px; border-radius: 24px;
+  font-size: 14px; z-index: 9999;
+  opacity: 0; transition: opacity .3s;
+  pointer-events: none; white-space: nowrap;
+  max-width: 90vw; text-align: center;
+}
+#toast.show { opacity: 1; }
+
+/* ── 隱藏畫布用於 PNG 輸出 ── */
+#export-canvas { display: none; }
+</style>
 </head>
 <body>
+
+<header>
+  <h1>🖋 墨聯 AI</h1>
+  <p>輸入關鍵字，由 AI 生成專屬對聯</p>
+  <div class="seal">墨<br>聯</div>
+</header>
+
 <div class="container">
 
-    <header>
-        <h1>🖋️ 墨聯 AI 產生器</h1>
-        <p>輸入關鍵字，由 AI 生成專屬對聯</p>
-    </header>
-
-    <div id="apikey-section">
-        <div class="guide">
-            🔑 需要 Gemini API Key：前往 <b>aistudio.google.com</b> → Get API Key → 複製貼入
-        </div>
-        <div class="row">
-            <input type="password" id="apikey" placeholder="AIzaSy...">
-            <button class="btn amber" id="save-key-btn">記住</button>
-        </div>
-        <div class="hint">僅存於本機，不會上傳</div>
-        <div id="model-list"></div>
-        <button class="btn green" id="check-key-btn" style="width:100%;padding:8px;font-size:13px;">🔍 查詢可用模型</button>
+  <!-- API Key -->
+  <div class="apikey-section" id="apikey-section">
+    <div class="guide">
+      🔑 需要 <b>Gemini API Key</b>：前往 <b>aistudio.google.com</b>
+      → Get API Key → 複製貼入下方 → 按「記住」
     </div>
-
-    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
-        <span style="font-size:13px;color:#888;">字數：</span>
-        <button class="words-btn active" data-words="5">五字</button>
-        <button class="words-btn" data-words="6">六字</button>
-        <button class="words-btn" data-words="7">七字</button>
-        <button class="words-btn" data-words="0">不限</button>
+    <div class="row">
+      <input type="password" id="apikey" placeholder="AIzaSy...">
+      <button class="btn btn-gold" id="save-key-btn">記住</button>
     </div>
-    <div class="input-row">
-        <input type="text" id="keyword" placeholder="例如：新家、恭喜、台中...">
-        <button class="btn" id="gen-btn">生成對聯</button>
+    <div class="hint">僅存於本機 localStorage，不會上傳</div>
+  </div>
+
+  <!-- 輸入 -->
+  <div class="input-row">
+    <input type="text" id="keyword" placeholder="例如：新家、軟體、古道西風…">
+    <button class="btn btn-red" id="gen-btn">生成對聯</button>
+  </div>
+
+  <div id="loading"><span class="pulse">🖌 揮毫中，請稍候…</span></div>
+  <div id="error-box"></div>
+
+  <!-- 對聯顯示 -->
+  <div id="display-area">
+    <div class="horizontal" id="horizontal">橫批</div>
+    <div class="pillars">
+      <div class="pillar-wrap">
+        <div class="pillar" id="upper">上聯</div>
+        <div class="pillar-label">上聯</div>
+      </div>
+      <div class="pillar-wrap">
+        <div class="pillar" id="lower">下聯</div>
+        <div class="pillar-label">下聯</div>
+      </div>
     </div>
+    <div class="analysis" id="analysis"></div>
 
-    <div id="loading"><span class="pulse">🖌️ 揮毫中，請稍候...</span></div>
-    <div id="error-box"></div>
-    <div id="raw-box" style="display:none;background:#111;border:1px solid #333;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;font-family:monospace;color:#aaa;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;"><b style='color:#ffd700'>📄 AI 原始回傳：</b><br><span id="raw-content"></span></div>
-
-    <div id="display-area">
-        <div class="horizontal" id="horizontal"></div>
-        <div class="pillars">
-            <div class="pillar-wrap">
-                <div class="pillar" id="upper"></div>
-                <div class="pillar-label">上聯</div>
-            </div>
-            <div class="pillar-wrap">
-                <div class="pillar" id="lower"></div>
-                <div class="pillar-label">下聯</div>
-            </div>
-        </div>
-        <div class="analysis" id="analysis"></div>
-        <div class="action-row">
-            <button class="btn amber" id="save-btn">⭐ 收藏此副</button>
-            <button class="btn gray"  id="clear-btn">清除</button>
-        </div>
+    <!-- 動作按鈕 -->
+    <div class="action-row">
+      <button class="btn btn-gold btn-sm" id="save-btn">⭐ 收藏</button>
+      <button class="btn btn-share btn-sm" id="share-btn">🔗 分享</button>
+      <button class="btn btn-png btn-sm" id="png-btn">🖼 下載 PNG</button>
+      <button class="btn btn-svg btn-sm" id="svg-btn">📐 下載 SVG</button>
+      <button class="btn btn-gray btn-sm" id="clear-btn">✕ 清除</button>
     </div>
+  </div>
 
-    <hr class="divider">
-    <div class="history-header">📜 我的收藏紀錄</div>
-    <div class="history-hint">最多保留 5 副・點擊可重新顯示</div>
-    <div id="history-list"></div>
-
+  <hr class="divider">
+  <div class="section-title">📜 我的收藏</div>
+  <div class="section-hint">最多保留 10 副 · 點擊可重新顯示</div>
+  <div id="history-list"></div>
 </div>
+
+<canvas id="export-canvas"></canvas>
 <div id="toast"></div>
 
 <script>
+// ── 狀態 ────────────────────────────────────────────
 var currentResult = null;
 var toastTimer = null;
-var MODELS = ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-2.0-flash-lite'];
-var discoveredModels = []; // 查詢可用模型後動態填入
 
-function getApiKey() {
-    return localStorage.getItem('gemini_api_key') || '';
-}
+// ── API Key ──────────────────────────────────────────
+function getApiKey(){ return localStorage.getItem('gemini_api_key') || ''; }
 
-document.getElementById('save-key-btn').addEventListener('click', function() {
-    var key = document.getElementById('apikey').value.trim();
-    if (!key.startsWith('AIza')) { showToast('格式不對，應以 AIza 開頭'); return; }
-    localStorage.setItem('gemini_api_key', key);
-    document.getElementById('apikey-section').style.opacity = '0.6';
-    showToast('✅ API Key 已儲存');
+document.getElementById('save-key-btn').addEventListener('click', function(){
+  var key = document.getElementById('apikey').value.trim();
+  if(!key.startsWith('AIza')){ showToast('格式不對，應以 AIza 開頭'); return; }
+  localStorage.setItem('gemini_api_key', key);
+  document.getElementById('apikey-section').style.opacity = '0.5';
+  showToast('✅ API Key 已儲存');
 });
 
-document.getElementById('check-key-btn').addEventListener('click', async function() {
-    var apiKey = document.getElementById('apikey').value.trim() || getApiKey();
-    if (!apiKey) { showToast('請先填入 Key'); return; }
-    var box = document.getElementById('model-list');
-    box.style.display = 'block';
-    box.textContent = '查詢中...';
-    try {
-        var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey);
-        var data = await res.json();
-        if (data.error) { box.textContent = '錯誤：' + data.error.message; return; }
-
-        // 只保留 gemini 文字生成模型（排除 image/tts/robotics 等）
-        var all = (data.models || [])
-            .filter(function(m) {
-                return m.supportedGenerationMethods &&
-                       m.supportedGenerationMethods.indexOf('generateContent') >= 0 &&
-                       m.name.indexOf('gemini') >= 0 &&
-                       m.name.indexOf('image') < 0 &&
-                       m.name.indexOf('tts') < 0 &&
-                       m.name.indexOf('robotics') < 0 &&
-                       m.name.indexOf('computer-use') < 0;
-            })
-            .map(function(m) { return m.name.replace('models/', ''); });
-
-        discoveredModels = all;
-
-        // 優先順序：2.5-flash > 2.5-pro > 2.0-flash > 其他
-        var priority = ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-2.0-flash-lite'];
-        var sorted = [];
-        priority.forEach(function(p) {
-            if (all.indexOf(p) >= 0) sorted.push(p);
-        });
-        all.forEach(function(m) {
-            if (sorted.indexOf(m) < 0) sorted.push(m);
-        });
-        discoveredModels = sorted;
-
-        box.innerHTML = '<b>✅ 已載入 ' + sorted.length + ' 個模型，優先使用：</b> ' + (sorted[0] || '無') + '<br><br>' + sorted.join('<br>');
-        showToast('✅ 模型清單已更新，可直接生成');
-    } catch(e) {
-        box.textContent = '查詢失敗：' + e.message;
-    }
-});
-
-var selectedWords = 5;
-document.querySelectorAll('.words-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-        document.querySelectorAll('.words-btn').forEach(function(b) { b.classList.remove('active'); });
-        btn.classList.add('active');
-        selectedWords = parseInt(btn.dataset.words);
-    });
-});
-
+// ── 主要事件 ─────────────────────────────────────────
 document.getElementById('gen-btn').addEventListener('click', generateAction);
-document.getElementById('keyword').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') generateAction();
-});
+document.getElementById('keyword').addEventListener('keydown', function(e){ if(e.key==='Enter') generateAction(); });
 document.getElementById('save-btn').addEventListener('click', saveToHistory);
 document.getElementById('clear-btn').addEventListener('click', clearDisplay);
+document.getElementById('share-btn').addEventListener('click', shareAction);
+document.getElementById('png-btn').addEventListener('click', exportPNG);
+document.getElementById('svg-btn').addEventListener('click', exportSVG);
 
-async function generateAction() {
-    var keyword = document.getElementById('keyword').value.trim();
-    if (!keyword) { showToast('請輸入關鍵字'); return; }
-    var apiKey = document.getElementById('apikey').value.trim() || getApiKey();
-    if (!apiKey) { showError('請先填入 Gemini API Key'); return; }
-    // 順便存起來
-    if (apiKey) localStorage.setItem('gemini_api_key', apiKey);
+// ── 生成對聯 ─────────────────────────────────────────
+async function generateAction(){
+  var keyword = document.getElementById('keyword').value.trim();
+  if(!keyword){ showToast('請輸入關鍵字'); return; }
 
-    setLoading(true);
-    hideError();
+  var apiKey = getApiKey();
+  if(!apiKey){ showError('請先填入並儲存 Gemini API Key'); return; }
 
-    var wordsRule = selectedWords > 0
-        ? '上下聯必須各為【' + selectedWords + '個字】，不得多也不得少。'
-        : '上下聯字數相同（5至7字均可）。';
-    var prompt = '你是精通漢語對聯的文學家，請根據關鍵字「' + keyword + '」創作一副對聯。\n\n'
-        + '【字數規定】' + wordsRule + '上聯末字仄聲，下聯末字平聲，橫批4字。\n\n'
-        + '只回傳 JSON，禁止使用 markdown，analysis 限10字：\n'
-        + '{"upper":"上聯","lower":"下聯","horizontal":"橫批","analysis":"賞析"}';
+  setLoading(true);
+  hideError();
 
-    try {
-        var modelList = discoveredModels.length > 0 ? discoveredModels : MODELS;
-        var res = null, lastErr = '';
-        for (var i = 0; i < modelList.length; i++) {
-            var model = modelList[i];
-            var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
-            try {
-                // 30 秒 timeout
-                var controller = new AbortController();
-                var timeoutId = setTimeout(function() { controller.abort(); }, 30000);
+  var prompt = '你是一位精通漢語對聯的文學家，請根據以下關鍵字創作一副對聯。\n\n關鍵字：' + keyword + '\n\n規則：\n1. 上聯與下聯字數必須完全相同（建議5-7字）\n2. 上聯末字應為仄聲，下聯末字應為平聲\n3. 橫批恰好4字，與對聯意境呼應\n4. 文字工整，對仗工整，意境優美\n\n只回傳以下 JSON，不要有任何其他文字或 markdown：\n{"upper":"上聯內容","lower":"下聯內容","horizontal":"橫批四字","analysis":"簡短賞析約60字"}';
 
-                var r = await fetch(url, {
-                    method: 'POST',
-                    signal: controller.signal,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: {
-                            temperature: 0.8,
-                            maxOutputTokens: 1024,
-                            thinkingConfig: { thinkingBudget: 0 }
-                        }
-                    })
-                });
-                clearTimeout(timeoutId);
-
-                if (r.status === 404) { lastErr = model + ':404不存在'; continue; }
-                if (r.status === 429) { lastErr = model + ':429額度超限'; continue; }
-                if (r.status === 400) {
-                    var e400 = await r.json().catch(function() { return {}; });
-                    lastErr = model + ':400(' + ((e400.error && e400.error.message) || '?') + ')';
-                    continue;
-                }
-                if (!r.ok) {
-                    var e = await r.json().catch(function() { return {}; });
-                    lastErr = model + ':HTTP' + r.status + '(' + ((e.error && e.error.message) || '?') + ')';
-                    continue;
-                }
-                res = r;
-                break;
-            } catch(fe) {
-                if (fe.name === 'AbortError') { lastErr = model + ' 逾時(30s)'; } 
-                else { lastErr = fe.message; }
-                continue;
-            }
-        }
-
-        if (!res) throw new Error('嘗試了 ' + modelList.length + ' 個模型均失敗。最後錯誤：' + lastErr);
-
-        var data = await res.json();
-        // 取出回傳文字
-        var text = '';
-        if (data.candidates && data.candidates[0] && data.candidates[0].content &&
-            data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
-            text = data.candidates[0].content.parts[0].text || '';
-        }
-
-        if (!text) {
-            var reason = (data.candidates && data.candidates[0] && data.candidates[0].finishReason) || '未知';
-            throw new Error('回傳為空(finishReason:' + reason + ')，raw：' + JSON.stringify(data).slice(0, 200));
-        }
-
-        // 顯示原始回傳以便除錯
-        showRaw(text);
-
-        // 從第一個 { 到最後一個 } 完整抓取
-        var start = text.indexOf('{');
-        var end = text.lastIndexOf('}');
-        if (start === -1 || end === -1 || end <= start) {
-            throw new Error('找不到 JSON 括號，原始：' + text.slice(0, 150));
-        }
-        var jsonStr = text.slice(start, end + 1);
-        var jsonMatch = [jsonStr];
-        if (!jsonMatch) throw new Error('找不到 JSON，原始：' + text.slice(0, 150));
-
-        var result;
-        try { result = JSON.parse(jsonMatch[0]); }
-        catch(pe) { throw new Error('JSON解析失敗：' + pe.message + '，內容：' + jsonMatch[0].slice(0, 150)); }
-
-        if (!result.upper || !result.lower || !result.horizontal) {
-            throw new Error('欄位不完整：' + JSON.stringify(result).slice(0, 150));
-        }
-
-        currentResult = result;
-        // 成功後隱藏原始回傳框
-        var rb = document.getElementById('raw-box');
-        if (rb) rb.style.display = 'none';
-        renderCouplet();
-
-    } catch(err) {
-        showError('生成失敗：' + err.message);
-    } finally {
-        setLoading(false);
-    }
-}
-
-function showRaw(text) {
-    var box = document.getElementById('raw-box');
-    var span = document.getElementById('raw-content');
-    if (box && span) {
-        span.textContent = text;
-        box.style.display = 'block';
-    }
-}
-
-function renderCouplet() {
-    if (!currentResult) return;
-    document.getElementById('upper').textContent = currentResult.upper;
-    document.getElementById('lower').textContent = currentResult.lower;
-    document.getElementById('horizontal').textContent = currentResult.horizontal;
-    document.getElementById('analysis').textContent = currentResult.analysis || '';
-    document.getElementById('display-area').style.display = 'block';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function saveToHistory() {
-    if (!currentResult) return;
-    var h = getHistory();
-    if (h.some(function(x) { return x.upper === currentResult.upper; })) { showToast('此副已在收藏中'); return; }
-    h.unshift(currentResult);
-    localStorage.setItem('couplet_history', JSON.stringify(h.slice(0, 5)));
-    renderHistory(); showToast('✅ 已存入收藏！');
-}
-
-function deleteItem(i) {
-    var h = getHistory(); h.splice(i, 1);
-    localStorage.setItem('couplet_history', JSON.stringify(h));
-    renderHistory(); showToast('已刪除');
-}
-
-function loadItem(i) {
-    var item = getHistory()[i];
-    if (!item) return;
-    currentResult = item; renderCouplet();
-}
-
-function getHistory() {
-    try { return JSON.parse(localStorage.getItem('couplet_history') || '[]'); } catch(e) { return []; }
-}
-
-function renderHistory() {
-    var list = document.getElementById('history-list');
-    var h = getHistory();
-    if (!h.length) { list.innerHTML = '<div class="empty-hint">尚無收藏</div>'; return; }
-    list.innerHTML = '';
-    h.forEach(function(item, i) {
-        var row = document.createElement('div');
-        row.className = 'history-item';
-        var span = document.createElement('span');
-        span.className = 'history-text';
-        span.textContent = item.horizontal + '｜' + item.upper + ' ／ ' + item.lower;
-        span.addEventListener('click', function() { loadItem(i); });
-        var del = document.createElement('button');
-        del.className = 'btn gray small';
-        del.textContent = '刪除';
-        del.addEventListener('click', function() { deleteItem(i); });
-        row.appendChild(span); row.appendChild(del);
-        list.appendChild(row);
+  try {
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey;
+    var resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 512 }
+      })
     });
+    if(!resp.ok){
+      var e = await resp.json().catch(function(){ return {}; });
+      throw new Error((e.error && e.error.message) || 'HTTP ' + resp.status);
+    }
+    var data = await resp.json();
+    var text = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || '';
+    text = text.replace(/```json|```/g, '').trim();
+    var result = JSON.parse(text);
+    if(!result.upper || !result.lower || !result.horizontal) throw new Error('AI 回傳格式不完整，請再試一次');
+    result.keyword = keyword;
+    currentResult = result;
+    renderCouplet(result);
+  } catch(err){
+    showError('❌ ' + err.message);
+  } finally {
+    setLoading(false);
+  }
 }
 
-function clearDisplay() {
-    document.getElementById('display-area').style.display = 'none';
-    document.getElementById('keyword').value = '';
-    currentResult = null;
+// ── 渲染對聯 ─────────────────────────────────────────
+function renderCouplet(r){
+  // 直書：將文字拆成每個字加換行
+  document.getElementById('horizontal').textContent = r.horizontal;
+  document.getElementById('upper').textContent = r.upper;
+  document.getElementById('lower').textContent = r.lower;
+  document.getElementById('analysis').textContent = '📖 ' + r.analysis;
+  document.getElementById('display-area').style.display = 'block';
+  document.getElementById('display-area').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function setLoading(on) {
-    document.getElementById('loading').style.display = on ? 'block' : 'none';
-    // 只在開始載入時隱藏對聯，結束時不動它（由 renderCouplet 控制）
-    if (on) document.getElementById('display-area').style.display = 'none';
-    document.getElementById('gen-btn').disabled = on;
-    document.getElementById('gen-btn').textContent = on ? '生成中...' : '生成對聯';
+// ── 收藏 ─────────────────────────────────────────────
+function saveToHistory(){
+  if(!currentResult){ showToast('請先生成對聯'); return; }
+  var list = JSON.parse(localStorage.getItem('moLian_history') || '[]');
+  var dup = list.findIndex(function(x){ return x.upper===currentResult.upper && x.lower===currentResult.lower; });
+  if(dup >= 0){ showToast('此副已在收藏中'); return; }
+  list.unshift(Object.assign({}, currentResult, { savedAt: Date.now() }));
+  if(list.length > 10) list = list.slice(0, 10);
+  localStorage.setItem('moLian_history', JSON.stringify(list));
+  showToast('⭐ 已收藏！');
+  renderHistory();
 }
 
-function showError(msg) {
-    var el = document.getElementById('error-box');
-    el.textContent = msg; el.style.display = 'block';
-}
-function hideError() { document.getElementById('error-box').style.display = 'none'; }
-
-function showToast(msg) {
-    var t = document.getElementById('toast');
-    t.textContent = msg; t.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function() { t.classList.remove('show'); }, 2500);
+function deleteItem(i){
+  var list = JSON.parse(localStorage.getItem('moLian_history') || '[]');
+  list.splice(i, 1);
+  localStorage.setItem('moLian_history', JSON.stringify(list));
+  renderHistory();
 }
 
-// 初始化
+function loadItem(item){
+  currentResult = item;
+  renderCouplet(item);
+}
+
+function renderHistory(){
+  var list = JSON.parse(localStorage.getItem('moLian_history') || '[]');
+  var el = document.getElementById('history-list');
+  if(!list.length){ el.innerHTML = '<div style="color:#ccc;font-size:13px;text-align:center;padding:10px 0">暫無收藏</div>'; return; }
+  el.innerHTML = '';
+  list.forEach(function(item, i){
+    var row = document.createElement('div');
+    row.className = 'history-item';
+
+    var text = document.createElement('div');
+    text.className = 'history-text';
+    text.innerHTML = '<div class="htop">【' + item.horizontal + '】</div>' +
+      '<div>' + item.upper + ' ／ ' + item.lower + '</div>';
+    text.addEventListener('click', function(){ loadItem(item); });
+
+    var exportRow = document.createElement('div');
+    exportRow.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex-shrink:0;';
+
+    var pngBtn = document.createElement('button');
+    pngBtn.className = 'btn btn-png btn-sm';
+    pngBtn.textContent = 'PNG';
+    pngBtn.addEventListener('click', function(e){ e.stopPropagation(); currentResult = item; exportPNG(); });
+
+    var svgBtn = document.createElement('button');
+    svgBtn.className = 'btn btn-svg btn-sm';
+    svgBtn.textContent = 'SVG';
+    svgBtn.addEventListener('click', function(e){ e.stopPropagation(); currentResult = item; exportSVG(); });
+
+    var shareBtn = document.createElement('button');
+    shareBtn.className = 'btn btn-share btn-sm';
+    shareBtn.textContent = '分享';
+    shareBtn.addEventListener('click', function(e){ e.stopPropagation(); currentResult = item; shareAction(); });
+
+    var delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-gray btn-sm';
+    delBtn.textContent = '刪除';
+    delBtn.style.fontSize = '11px';
+    delBtn.addEventListener('click', function(e){ e.stopPropagation(); deleteItem(i); });
+
+    exportRow.appendChild(pngBtn);
+    exportRow.appendChild(svgBtn);
+    exportRow.appendChild(shareBtn);
+    exportRow.appendChild(delBtn);
+
+    row.appendChild(text);
+    row.appendChild(exportRow);
+    el.appendChild(row);
+  });
+}
+
+// ── 分享 ─────────────────────────────────────────────
+async function shareAction(){
+  if(!currentResult){ showToast('請先生成對聯'); return; }
+  var text = '【' + currentResult.horizontal + '】\n上聯：' + currentResult.upper + '\n下聯：' + currentResult.lower + '\n\n' + currentResult.analysis + '\n\n── 墨聯 AI 生成';
+  if(navigator.share){
+    try {
+      await navigator.share({ title: '墨聯 AI · ' + currentResult.horizontal, text: text });
+    } catch(e){
+      if(e.name !== 'AbortError') copyToClipboard(text);
+    }
+  } else {
+    copyToClipboard(text);
+  }
+}
+
+function copyToClipboard(text){
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(function(){ showToast('📋 已複製到剪貼簿！'); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('📋 已複製到剪貼簿！');
+  }
+}
+
+// ── SVG 生成（核心） ──────────────────────────────────
+function buildSVG(r){
+  var upper = r.upper || '';
+  var lower = r.lower || '';
+  var horizontal = r.horizontal || '';
+  var chars = upper.length;
+  // 尺寸計算
+  var charSize = 52;
+  var pillarW = 78;
+  var pillarPad = 20;
+  var pillarH = chars * charSize + pillarPad * 2 + 20;
+  var gap = 28;
+  var hBannerH = 70;
+  var totalW = 520;
+  var totalH = hBannerH + 24 + pillarH + 60;
+
+  var svg = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  svg += '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '">\n';
+
+  // 背景
+  svg += '<rect width="' + totalW + '" height="' + totalH + '" fill="#faf7f2"/>\n';
+
+  // 橫批底色
+  var hW = horizontal.length * 38 + 80;
+  var hX = (totalW - hW) / 2;
+  svg += '<rect x="' + hX + '" y="16" width="' + hW + '" height="' + hBannerH + '" rx="4" fill="#c0392b" stroke="#d4a017" stroke-width="3"/>\n';
+  // 橫批文字
+  svg += '<text x="' + (totalW/2) + '" y="' + (16 + hBannerH/2 + 14) + '" font-family="Microsoft JhengHei,PingFang TC,serif" font-size="36" font-weight="bold" fill="#f0c040" text-anchor="middle" letter-spacing="10">' + escXML(horizontal) + '</text>\n';
+
+  // 柱子位置
+  var pillarTop = hBannerH + 40;
+  var upperX = (totalW/2) - gap/2 - pillarW;
+  var lowerX = (totalW/2) + gap/2;
+
+  // 上聯柱
+  svg += '<rect x="' + upperX + '" y="' + pillarTop + '" width="' + pillarW + '" height="' + pillarH + '" rx="4" fill="#c0392b" stroke="#d4a017" stroke-width="3"/>\n';
+  // 上聯文字（直書模擬：每字一個 text）
+  for(var i=0; i<upper.length; i++){
+    var cy = pillarTop + pillarPad + charSize/2 + 8 + i * charSize;
+    svg += '<text x="' + (upperX + pillarW/2) + '" y="' + cy + '" font-family="Microsoft JhengHei,PingFang TC,serif" font-size="' + charSize + '" font-weight="bold" fill="#f0c040" text-anchor="middle">' + escXML(upper[i]) + '</text>\n';
+  }
+  // 上聯標籤
+  svg += '<text x="' + (upperX + pillarW/2) + '" y="' + (pillarTop + pillarH + 22) + '" font-family="Microsoft JhengHei,PingFang TC,serif" font-size="13" fill="#888" text-anchor="middle">上聯</text>\n';
+
+  // 下聯柱
+  svg += '<rect x="' + lowerX + '" y="' + pillarTop + '" width="' + pillarW + '" height="' + pillarH + '" rx="4" fill="#c0392b" stroke="#d4a017" stroke-width="3"/>\n';
+  for(var j=0; j<lower.length; j++){
+    var dy = pillarTop + pillarPad + charSize/2 + 8 + j * charSize;
+    svg += '<text x="' + (lowerX + pillarW/2) + '" y="' + dy + '" font-family="Microsoft JhengHei,PingFang TC,serif" font-size="' + charSize + '" font-weight="bold" fill="#f0c040" text-anchor="middle">' + escXML(lower[j]) + '</text>\n';
+  }
+  svg += '<text x="' + (lowerX + pillarW/2) + '" y="' + (pillarTop + pillarH + 22) + '" font-family="Microsoft JhengHei,PingFang TC,serif" font-size="13" fill="#888" text-anchor="middle">下聯</text>\n';
+
+  // 底部版權
+  svg += '<text x="' + (totalW/2) + '" y="' + (totalH - 10) + '" font-family="Microsoft JhengHei,PingFang TC,serif" font-size="11" fill="#ccc" text-anchor="middle">墨聯 AI 生成</text>\n';
+
+  svg += '</svg>';
+  return svg;
+}
+
+function escXML(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── 下載 SVG ──────────────────────────────────────────
+function exportSVG(){
+  if(!currentResult){ showToast('請先生成對聯'); return; }
+  var svgStr = buildSVG(currentResult);
+  var blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = '墨聯_' + currentResult.horizontal + '.svg';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  showToast('📐 SVG 已下載！');
+}
+
+// ── 下載 PNG（SVG → Canvas → PNG） ───────────────────
+function exportPNG(){
+  if(!currentResult){ showToast('請先生成對聯'); return; }
+  var svgStr = buildSVG(currentResult);
+  var scale = 2; // 2x 高解析度
+
+  // 解析 SVG 尺寸
+  var wMatch = svgStr.match(/width="(\d+)"/);
+  var hMatch = svgStr.match(/height="(\d+)"/);
+  var svgW = wMatch ? parseInt(wMatch[1]) : 520;
+  var svgH = hMatch ? parseInt(hMatch[1]) : 600;
+
+  var canvas = document.getElementById('export-canvas');
+  canvas.width  = svgW * scale;
+  canvas.height = svgH * scale;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+
+  var img = new Image();
+  var blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+  // iOS 需要用 base64 data URI
+  var reader = new FileReader();
+  reader.onload = function(e){
+    img.onload = function(){
+      ctx.drawImage(img, 0, 0);
+      try {
+        var pngUrl = canvas.toDataURL('image/png');
+        var a = document.createElement('a');
+        a.href = pngUrl;
+        a.download = '墨聯_' + currentResult.horizontal + '.png';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        showToast('🖼 PNG 已下載！');
+      } catch(ex){
+        showToast('PNG 輸出失敗：' + ex.message);
+      }
+    };
+    img.onerror = function(){
+      showToast('PNG 渲染失敗，請改用 SVG');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(blob);
+}
+
+// ── UI 輔助 ───────────────────────────────────────────
+function clearDisplay(){
+  document.getElementById('display-area').style.display = 'none';
+  document.getElementById('keyword').value = '';
+  currentResult = null;
+}
+
+function setLoading(on){
+  document.getElementById('loading').style.display = on ? 'block' : 'none';
+  if(on) document.getElementById('display-area').style.display = 'none';
+  document.getElementById('gen-btn').disabled = on;
+  document.getElementById('gen-btn').textContent = on ? '生成中…' : '生成對聯';
+}
+
+function showError(msg){
+  var el = document.getElementById('error-box');
+  el.innerHTML = msg; el.style.display = 'block';
+}
+function hideError(){ document.getElementById('error-box').style.display = 'none'; }
+
+function showToast(msg){
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2600);
+}
+
+// ── 初始化 ────────────────────────────────────────────
 renderHistory();
 var _k = getApiKey();
-if (_k) {
-    document.getElementById('apikey').value = _k;
-    document.getElementById('apikey-section').style.opacity = '0.6';
+if(_k){
+  document.getElementById('apikey').value = _k;
+  document.getElementById('apikey-section').style.opacity = '0.5';
 }
 </script>
 </body>
