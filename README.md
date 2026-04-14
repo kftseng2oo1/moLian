@@ -1,4 +1,4 @@
-# AI 春聯
+# AI 對聯
 
 > 一個 Progressive Web App
 
@@ -18,7 +18,7 @@
 ```bash
 git init
 git add .
-git commit -m "init: AI 春聯 PWA"
+git commit -m "init: AI 對聯 PWA"
 git branch -M main
 git remote add origin https://github.com/<username>/<repo>.git
 git push -u origin main

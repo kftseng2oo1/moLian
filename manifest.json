@@ -1,6 +1,6 @@
 {
-  "name": "AI 春聯",
-  "short_name": "AI 春聯",
+  "name": "AI 對聯",
+  "short_name": "AI 對聯",
   "description": "",
   "start_url": "/moLian/",
   "scope": "/moLian/",
@@ -14,8 +14,8 @@
   ],
   "shortcuts": [
     {
-      "name": "開啟 AI 春聯",
-      "short_name": "AI 春聯",
+      "name": "開啟 AI 對聯",
+      "short_name": "AI 對聯",
       "url": "/moLian/",
       "icons": [
         {
