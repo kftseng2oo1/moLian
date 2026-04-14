@@ -317,20 +317,25 @@ async function generateAction(){
   var prompt = '你是一位精通漢語對聯的文學家，請根據以下關鍵字創作一副對聯。\n\n關鍵字：' + keyword + '\n\n規則：\n1. 上聯與下聯字數必須完全相同（建議5-7字）\n2. 上聯末字應為仄聲，下聯末字應為平聲\n3. 橫批恰好4字，與對聯意境呼應\n4. 文字工整，對仗工整，意境優美\n\n只回傳以下 JSON，不要有任何其他文字或 markdown：\n{"upper":"上聯內容","lower":"下聯內容","horizontal":"橫批四字","analysis":"簡短賞析約60字"}';
 
   try {
-    var url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey;
-    var resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: 512 }
-      })
-    });
-    if(!resp.ok){
-      var e = await resp.json().catch(function(){ return {}; });
-      throw new Error((e.error && e.error.message) || 'HTTP ' + resp.status);
+    var models = ['gemini-2.5-flash-preview-04-17','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-1.5-flash-latest'];
+    var resp = null, data = null, lastErr = '';
+    for(var mi=0; mi<models.length; mi++){
+      var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + models[mi] + ':generateContent?key=' + apiKey;
+      resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.9, maxOutputTokens: 512 }
+        })
+      });
+      if(resp.ok){ data = await resp.json(); break; }
+      var eBody = await resp.json().catch(function(){ return {}; });
+      lastErr = (eBody.error && eBody.error.message) || 'HTTP ' + resp.status;
+      // 若是 not found / not available 就換下一個，其他錯誤直接拋出
+      if(resp.status !== 404 && resp.status !== 400) throw new Error(lastErr);
     }
-    var data = await resp.json();
+    if(!data) throw new Error(lastErr || '所有模型均無法使用，請稍後再試');
     var text = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || '';
     text = text.replace(/```json|```/g, '').trim();
     var result = JSON.parse(text);
