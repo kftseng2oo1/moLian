@@ -447,8 +447,16 @@ function renderHistory() {
 
 function clearDisplay() {
     document.getElementById('display-area').style.display = 'none';
+    document.getElementById('raw-box').style.display = 'none';
+    document.getElementById('error-box').style.display = 'none';
     document.getElementById('keyword').value = '';
     currentResult = null;
+    // 確保 API Key 區不被動到
+    var k = getApiKey();
+    if (k) {
+        document.getElementById('apikey').value = k;
+        document.getElementById('apikey-section').style.opacity = '0.6';
+    }
 }
 
 function setLoading(on) {
@@ -485,7 +493,36 @@ if (_k) {
 function buildCoupletCanvas() {
     if (!currentResult) return null;
     var canvas = document.getElementById('couplet-canvas');
-    var W = 600, H = 560;
+    var W = 600;
+    var CHAR_H = 44, CHAR_SIZE = 32;
+    var PAD_TOP = 20, HBATCH_H = 56, GAP = 16;
+    var PILLAR_W = 100, PILLAR_PAD_TOP = 18;
+    var LABEL_H = 24;
+
+    // 動態計算對聯柱高度（依最長那聯字數決定）
+    var upperLen = (currentResult.upper || '').length;
+    var lowerLen = (currentResult.lower || '').length;
+    var maxLen = Math.max(upperLen, lowerLen, 4);
+    var pillarH = PILLAR_PAD_TOP * 2 + maxLen * CHAR_H;
+
+    // 賞析高度（自動換行）
+    var analysisLines = 0;
+    if (currentResult.analysis) {
+        var testCanvas = document.createElement('canvas');
+        var testCtx = testCanvas.getContext('2d');
+        testCtx.font = '13px serif';
+        var maxW = 520, chars = currentResult.analysis.split(''), line = '';
+        chars.forEach(function(ch) {
+            if (testCtx.measureText(line + ch).width > maxW) { analysisLines++; line = ch; }
+            else { line += ch; }
+        });
+        analysisLines++;
+    }
+    var analysisH = analysisLines * 22 + (analysisLines > 0 ? 20 : 0);
+
+    var pillarY = PAD_TOP + HBATCH_H + GAP;
+    var H = pillarY + pillarH + LABEL_H + analysisH + 30;
+
     canvas.width = W; canvas.height = H;
     var ctx = canvas.getContext('2d');
 
@@ -500,45 +537,52 @@ function buildCoupletCanvas() {
 
     // 橫批
     var hText = currentResult.horizontal || '';
+    var hW = Math.min(hText.length * 48 + 60, 500);
+    var hX = (W - hW) / 2;
     ctx.fillStyle = '#c0392b';
-    ctx.beginPath(); ctx.roundRect(160, 20, 280, 56, 6); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(hX, PAD_TOP, hW, HBATCH_H, 6); ctx.fill();
     ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(159, 19, 282, 58, 7); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(hX - 1, PAD_TOP - 1, hW + 2, HBATCH_H + 2, 7); ctx.stroke();
     ctx.fillStyle = '#ffd700';
     ctx.font = 'bold 28px "Microsoft JhengHei","PingFang TC",serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(hText.split('').join('  '), W / 2, 48);
+    ctx.fillText(hText.split('').join('  '), W / 2, PAD_TOP + HBATCH_H / 2);
 
-    // 春聯柱
+    // 上聯（左）、下聯（右）
+    var gap = 60;
+    var leftX  = W / 2 - gap / 2 - PILLAR_W;  // 上聯在左
+    var rightX = W / 2 + gap / 2;              // 下聯在右
+
     function drawPillar(x, text, label) {
         ctx.fillStyle = '#c0392b';
-        ctx.beginPath(); ctx.roundRect(x, 96, 100, 320, 6); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(x, pillarY, PILLAR_W, pillarH, 6); ctx.fill();
         ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2.5;
-        ctx.beginPath(); ctx.roundRect(x - 1, 95, 102, 322, 7); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(x - 1, pillarY - 1, PILLAR_W + 2, pillarH + 2, 7); ctx.stroke();
         ctx.fillStyle = '#ffd700';
-        ctx.font = 'bold 32px "Microsoft JhengHei","PingFang TC",serif';
+        ctx.font = 'bold ' + CHAR_SIZE + 'px "Microsoft JhengHei","PingFang TC",serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
         text.split('').forEach(function(ch, i) {
-            ctx.fillText(ch, x + 50, 114 + i * 44);
+            ctx.fillText(ch, x + PILLAR_W / 2, pillarY + PILLAR_PAD_TOP + i * CHAR_H);
         });
         ctx.fillStyle = '#888';
         ctx.font = '12px "Microsoft JhengHei","PingFang TC",sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(label, x + 50, 424);
+        ctx.fillText(label, x + PILLAR_W / 2, pillarY + pillarH + 6);
     }
 
-    drawPillar(155, currentResult.upper || '', '上聯');
-    drawPillar(345, currentResult.lower || '', '下聯');
+    drawPillar(leftX,  currentResult.upper || '', '上聯');
+    drawPillar(rightX, currentResult.lower || '', '下聯');
 
     // 賞析
     if (currentResult.analysis) {
         ctx.fillStyle = '#555';
         ctx.font = '13px "Microsoft JhengHei","PingFang TC",sans-serif';
         ctx.textAlign = 'center';
-        var ay = 446, maxW = 520, chars = currentResult.analysis.split(''), line = '';
+        var ay = pillarY + pillarH + LABEL_H + 10;
+        var maxW = 520, chars = currentResult.analysis.split(''), line = '';
         chars.forEach(function(ch) {
             if (ctx.measureText(line + ch).width > maxW) {
-                ctx.fillText(line, W / 2, ay); ay += 20; line = ch;
+                ctx.fillText(line, W / 2, ay); ay += 22; line = ch;
             } else { line += ch; }
         });
         if (line) ctx.fillText(line, W / 2, ay);
@@ -560,32 +604,36 @@ document.getElementById('save-png-btn').addEventListener('click', function() {
 document.getElementById('save-svg-btn').addEventListener('click', function() {
     if (!currentResult) { showToast('請先生成對聯', true); return; }
     var r = currentResult;
-    var upperChars = r.upper.split('').map(function(ch, i) {
-        return '<text x="205" y="' + (122 + i * 44) + '" text-anchor="middle" font-size="32" font-weight="bold" fill="#ffd700">' + ch + '</text>';
+    var maxLen = Math.max((r.upper||'').length, (r.lower||'').length, 4);
+    var pillarH = 36 + maxLen * 44;
+    var pillarY = 92;
+    var svgH = pillarY + pillarH + 30 + 60;
+    var labelY = pillarY + pillarH + 16;
+    var leftX = 155, rightX = 345;
+    var upperChars = (r.upper||'').split('').map(function(ch,i){
+        return '<text x="'+(leftX+50)+'" y="'+(pillarY+18+i*44)+'" text-anchor="middle" font-size="32" font-weight="bold" fill="#ffd700">'+ch+'</text>';
     }).join('');
-    var lowerChars = r.lower.split('').map(function(ch, i) {
-        return '<text x="395" y="' + (122 + i * 44) + '" text-anchor="middle" font-size="32" font-weight="bold" fill="#ffd700">' + ch + '</text>';
+    var lowerChars = (r.lower||'').split('').map(function(ch,i){
+        return '<text x="'+(rightX+50)+'" y="'+(pillarY+18+i*44)+'" text-anchor="middle" font-size="32" font-weight="bold" fill="#ffd700">'+ch+'</text>';
     }).join('');
-
     var svg = '<?xml version="1.0" encoding="UTF-8"?>'
-        + '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="560">'
-        + '<rect width="600" height="560" fill="#f4f1ea"/>'
+        + '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="'+svgH+'">'
+        + '<rect width="600" height="'+svgH+'" fill="#f4f1ea"/>'
         + '<rect width="600" height="6" fill="#c9a84c"/>'
-        + '<rect y="554" width="600" height="6" fill="#c9a84c"/>'
+        + '<rect y="'+(svgH-6)+'" width="600" height="6" fill="#c9a84c"/>'
         + '<rect x="160" y="20" width="280" height="56" rx="6" fill="#c0392b"/>'
         + '<rect x="159" y="19" width="282" height="58" rx="7" fill="none" stroke="#ffd700" stroke-width="2"/>'
         + '<text x="300" y="53" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft JhengHei,PingFang TC,serif" font-size="28" font-weight="bold" fill="#ffd700">'
-        + r.horizontal.split('').join(' ') + '</text>'
-        + '<rect x="155" y="96" width="100" height="320" rx="6" fill="#c0392b"/>'
-        + '<rect x="154" y="95" width="102" height="322" rx="7" fill="none" stroke="#ffd700" stroke-width="2.5"/>'
+        + (r.horizontal||'').split('').join(' ') + '</text>'
+        + '<rect x="'+leftX+'" y="'+pillarY+'" width="100" height="'+pillarH+'" rx="6" fill="#c0392b"/>'
+        + '<rect x="'+(leftX-1)+'" y="'+(pillarY-1)+'" width="102" height="'+(pillarH+2)+'" rx="7" fill="none" stroke="#ffd700" stroke-width="2.5"/>'
         + upperChars
-        + '<text x="205" y="426" text-anchor="middle" font-family="Microsoft JhengHei,PingFang TC,sans-serif" font-size="12" fill="#888">上聯</text>'
-        + '<rect x="345" y="96" width="100" height="320" rx="6" fill="#c0392b"/>'
-        + '<rect x="344" y="95" width="102" height="322" rx="7" fill="none" stroke="#ffd700" stroke-width="2.5"/>'
+        + '<text x="'+(leftX+50)+'" y="'+labelY+'" text-anchor="middle" font-family="Microsoft JhengHei,PingFang TC,sans-serif" font-size="12" fill="#888">上聯</text>'
+        + '<rect x="'+rightX+'" y="'+pillarY+'" width="100" height="'+pillarH+'" rx="6" fill="#c0392b"/>'
+        + '<rect x="'+(rightX-1)+'" y="'+(pillarY-1)+'" width="102" height="'+(pillarH+2)+'" rx="7" fill="none" stroke="#ffd700" stroke-width="2.5"/>'
         + lowerChars
-        + '<text x="395" y="426" text-anchor="middle" font-family="Microsoft JhengHei,PingFang TC,sans-serif" font-size="12" fill="#888">下聯</text>'
+        + '<text x="'+(rightX+50)+'" y="'+labelY+'" text-anchor="middle" font-family="Microsoft JhengHei,PingFang TC,sans-serif" font-size="12" fill="#888">下聯</text>'
         + '</svg>';
-
     var blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
     var url = URL.createObjectURL(blob);
     var link = document.createElement('a');
