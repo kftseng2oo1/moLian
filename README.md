@@ -1,44 +1,22 @@
-# AI 對聯
+# 🖋️ 墨聯 AI 對聯產生器
 
-> 一個 Progressive Web App
+輸入關鍵字，由 Gemini 創作合乎平仄的對聯（上聯、下聯、橫批），排版成紅底書法圖片。
 
-## 📦 包含檔案
+**線上使用**：https://kftseng2oo1.github.io/moLian/
 
-- `icon-192.png`
-- `icon-512.png`
-- `manifest.json`
-- `sw.js`
-- `index.html`
-- `icon.svg`
-- `icon-maskable.svg`
-- `offline.html`
+## 主要功能
+- 字數：五字、六字、七字或不限
+- 規則：上下聯字數相同，上聯末字仄聲、下聯末字平聲，橫批四字，附簡短解析
+- 「🔍 查詢可用模型」自動挑選可用的 Gemini 模型
+- 結果畫成對聯圖：💾 存 PNG／SVG、📤 分享
+- ⭐ 收藏歷史紀錄，可重新載入或刪除
 
-## 🚀 部署到 GitHub Pages
+## 使用方式
+1. 填入 Gemini API Key（`AIza` 開頭）並按「記住」
+2. 輸入關鍵字、選字數
+3. 按「生成對聯」
 
-```bash
-git init
-git add .
-git commit -m "init: AI 對聯 PWA"
-git branch -M main
-git remote add origin https://github.com/<username>/<repo>.git
-git push -u origin main
-```
-
-然後在 GitHub repo → **Settings → Pages** → Source 選 `main` 分支，等待幾分鐘後即可訪問。
-
-## 📱 安裝 PWA
-
-在支援的瀏覽器（Chrome / Edge / Safari iOS）中打開網頁，  
-點擊「**安裝**」或「**加入主畫面**」即可將此 App 安裝到裝置。
-
-## ⚙ 技術規格
-
-| 項目 | 值 |
-|------|-----|
-| display | standalone |
-| theme_color | #1a73e8 |
-| lang | zh-TW |
-| scope | /moLian/ |
-
----
-*由 [PWA 打包神器](https://github.com) 自動生成*
+## 技術與依賴
+- 單檔 HTML PWA（`index.html` 內含全部 HTML/CSS/JS），`manifest.json` + `sw.js` 提供安裝到主畫面與離線快取。
+- Google Gemini API（直連 `generativelanguage.googleapis.com`）
+- 本機資料：`gemini_api_key`、`couplet_history`
