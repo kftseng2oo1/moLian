@@ -679,7 +679,7 @@ var brushLinkEl = null;
 function loadBrushFont(text) {
     // 連同字體按鈕上的名稱一起抓，避免同一字型的兩份子集互相蓋掉
     var names = Object.keys(FONT_OPTIONS).map(function(id) { return FONT_OPTIONS[id].name; }).join('');
-    var chars = Array.from(new Set(Array.from(text + '福墨聯' + names))).join('');
+    var chars = Array.from(new Set(Array.from(text + '福春崑' + names))).join('');
     if (brushLinkEl) brushLinkEl.parentNode.removeChild(brushLinkEl);
     brushLinkEl = document.createElement('link');
     brushLinkEl.rel = 'stylesheet';
@@ -882,7 +882,7 @@ function drawLantern(ctx, cx, top, r) {
     ctx.font = brushFont(r * 0.85);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffe08a';
-    ctx.fillText('福', cx, cy + 2);
+    ctx.fillText('春', cx, cy + 2);
     ctx.restore();
 }
 
@@ -911,7 +911,7 @@ function drawPlum(ctx, x, y, dir, rnd, scale) {
     ctx.restore();
 }
 
-// 朱印「墨聯」
+// 朱印「崑福」
 function drawSeal(ctx, x, y, s) {
     ctx.save();
     ctx.translate(x, y); ctx.rotate(-0.06);
@@ -922,8 +922,8 @@ function drawSeal(ctx, x, y, s) {
     ctx.fillStyle = '#fff3e0';
     ctx.font = brushFont(s * 0.36);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('墨', 0, -s * 0.2);
-    ctx.fillText('聯', 0, s * 0.2);
+    ctx.fillText('崑', 0, -s * 0.2);
+    ctx.fillText('福', 0, s * 0.2);
     ctx.restore();
 }
 
