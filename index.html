@@ -283,117 +283,154 @@ document.getElementById('keyword').addEventListener('keydown', function(e) {
 document.getElementById('save-btn').addEventListener('click', saveToHistory);
 document.getElementById('clear-btn').addEventListener('click', clearDisplay);
 
+// Gemini 結構化輸出：直接要求回傳符合 schema 的 JSON，不必再自己找括號解析
+var COUPLET_SCHEMA = {
+    type: 'OBJECT',
+    properties: {
+        upper:      { type: 'STRING', description: '上聯，只含漢字，不含標點' },
+        lower:      { type: 'STRING', description: '下聯，只含漢字，不含標點，字數與上聯相同' },
+        horizontal: { type: 'STRING', description: '橫批，4 個漢字' },
+        analysis:   { type: 'STRING', description: '賞析，30 至 50 字' }
+    },
+    required: ['upper', 'lower', 'horizontal', 'analysis'],
+    propertyOrdering: ['upper', 'lower', 'horizontal', 'analysis']
+};
+var MAX_ATTEMPTS = 3;
+
+// 去掉標點與空白後計算字數（用 Array.from 以正確處理罕用字）
+function cleanLine(str) {
+    return Array.from(String(str || '').replace(/[\s，。、；：！？,.;:!?「」『』（）()《》〈〉…—\-·]/g, '')).join('');
+}
+function charCount(str) { return Array.from(str).length; }
+
+// 檢查對聯格式，回傳問題描述（空字串代表合格）
+function validateCouplet(r, words) {
+    var u = charCount(r.upper), l = charCount(r.lower), h = charCount(r.horizontal);
+    var problems = [];
+    if (!u || !l || !h) problems.push('有欄位是空的');
+    if (u !== l) problems.push('上聯 ' + u + ' 字、下聯 ' + l + ' 字，字數不同');
+    if (words > 0 && (u !== words || l !== words)) problems.push('上下聯應各為 ' + words + ' 字');
+    if (words === 0 && (u < 5 || u > 7)) problems.push('上下聯應為 5 至 7 字');
+    if (h !== 4) problems.push('橫批應為 4 字，目前 ' + h + ' 字');
+    return problems.join('；');
+}
+
+// 依序嘗試模型，回傳解析好的物件
+async function callGemini(prompt, apiKey) {
+    var modelList = discoveredModels.length > 0 ? discoveredModels : MODELS;
+    var lastErr = '';
+    for (var i = 0; i < modelList.length; i++) {
+        var model = modelList[i];
+        var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+        // 只有 flash 系列可以把 thinking 關掉；pro 系列設 0 會回 400，
+        // 且 thinking 會吃掉輸出 token，所以給較大的上限
+        var canDisableThinking = model.indexOf('flash') >= 0;
+        var genConfig = {
+            temperature: 0.8,
+            maxOutputTokens: canDisableThinking ? 1024 : 4096,
+            responseMimeType: 'application/json',
+            responseSchema: COUPLET_SCHEMA
+        };
+        if (canDisableThinking) genConfig.thinkingConfig = { thinkingBudget: 0 };
+
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function() { controller.abort(); }, 30000);
+        try {
+            var r = await fetch(url, {
+                method: 'POST',
+                signal: controller.signal,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: genConfig
+                })
+            });
+            if (!r.ok) {
+                var e = await r.json().catch(function() { return {}; });
+                lastErr = model + ':HTTP' + r.status + '(' + ((e.error && e.error.message) || '?') + ')';
+                continue;
+            }
+            var data = await r.json();
+            var c = data.candidates && data.candidates[0];
+            var text = (c && c.content && c.content.parts || []).map(function(p) { return p.text || ''; }).join('');
+            if (!text) {
+                lastErr = model + ':回傳為空(finishReason:' + ((c && c.finishReason) || '未知') + ')';
+                continue;
+            }
+            try {
+                return JSON.parse(text);
+            } catch (pe) {
+                // 少數情況模型仍包了 markdown，退回抓括號
+                var s = text.indexOf('{'), en = text.lastIndexOf('}');
+                if (s >= 0 && en > s) {
+                    try { return JSON.parse(text.slice(s, en + 1)); } catch (pe2) {}
+                }
+                showRaw(text);
+                lastErr = model + ':JSON 解析失敗';
+                continue;
+            }
+        } catch (fe) {
+            lastErr = fe.name === 'AbortError' ? model + ' 逾時(30s)' : (model + ':' + fe.message);
+            continue;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+    throw new Error('嘗試了 ' + modelList.length + ' 個模型均失敗。最後錯誤：' + lastErr);
+}
+
+function buildPrompt(keyword, words, feedback) {
+    var wordsRule = words > 0
+        ? '上下聯必須各為【' + words + '個字】，不得多也不得少。'
+        : '上下聯字數相同（5至7字均可）。';
+    var p = '你是精通漢語對聯的文學家，請根據關鍵字「' + keyword + '」創作一副對聯。\n\n'
+        + '【字數規定】' + wordsRule + '上下聯只寫漢字，不加標點。\n'
+        + '【格律】上聯末字仄聲，下聯末字平聲；上下聯詞性相對、結構相同。\n'
+        + '【橫批】4 個字。\n'
+        + '【賞析】30 至 50 字，說明意境與對仗。\n'
+        + '請使用繁體中文。';
+    if (feedback) p += '\n\n上一次的結果不合格（' + feedback + '），請重新創作並嚴格遵守字數。';
+    return p;
+}
+
 async function generateAction() {
     var keyword = document.getElementById('keyword').value.trim();
     if (!keyword) { showToast('請輸入關鍵字'); return; }
     var apiKey = document.getElementById('apikey').value.trim() || getApiKey();
     if (!apiKey) { showError('請先填入 Gemini API Key'); return; }
-    // 順便存起來
-    if (apiKey) localStorage.setItem('gemini_api_key', apiKey);
+    localStorage.setItem('gemini_api_key', apiKey);
 
     setLoading(true);
     hideError();
+    document.getElementById('raw-box').style.display = 'none';
 
-    var wordsRule = selectedWords > 0
-        ? '上下聯必須各為【' + selectedWords + '個字】，不得多也不得少。'
-        : '上下聯字數相同（5至7字均可）。';
-    var prompt = '你是精通漢語對聯的文學家，請根據關鍵字「' + keyword + '」創作一副對聯。\n\n'
-        + '【字數規定】' + wordsRule + '上聯末字仄聲，下聯末字平聲，橫批4字。\n\n'
-        + '只回傳 JSON，禁止使用 markdown，analysis 限10字：\n'
-        + '{"upper":"上聯","lower":"下聯","horizontal":"橫批","analysis":"賞析"}';
-
+    var words = selectedWords;
     try {
-        var modelList = discoveredModels.length > 0 ? discoveredModels : MODELS;
-        var res = null, lastErr = '';
-        for (var i = 0; i < modelList.length; i++) {
-            var model = modelList[i];
-            var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
-            try {
-                // 30 秒 timeout
-                var controller = new AbortController();
-                var timeoutId = setTimeout(function() { controller.abort(); }, 30000);
-
-                // 只有 flash 系列可以把 thinking 關掉；pro 系列設 0 會回 400，
-                // 且 thinking 會吃掉輸出 token，所以給較大的上限
-                var canDisableThinking = model.indexOf('flash') >= 0;
-                var genConfig = { temperature: 0.8, maxOutputTokens: canDisableThinking ? 1024 : 4096 };
-                if (canDisableThinking) genConfig.thinkingConfig = { thinkingBudget: 0 };
-
-                var r = await fetch(url, {
-                    method: 'POST',
-                    signal: controller.signal,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: genConfig
-                    })
-                });
-                clearTimeout(timeoutId);
-
-                if (r.status === 404) { lastErr = model + ':404不存在'; continue; }
-                if (r.status === 429) { lastErr = model + ':429額度超限'; continue; }
-                if (r.status === 400) {
-                    var e400 = await r.json().catch(function() { return {}; });
-                    lastErr = model + ':400(' + ((e400.error && e400.error.message) || '?') + ')';
-                    continue;
-                }
-                if (!r.ok) {
-                    var e = await r.json().catch(function() { return {}; });
-                    lastErr = model + ':HTTP' + r.status + '(' + ((e.error && e.error.message) || '?') + ')';
-                    continue;
-                }
-                res = r;
-                break;
-            } catch(fe) {
-                if (fe.name === 'AbortError') { lastErr = model + ' 逾時(30s)'; } 
-                else { lastErr = fe.message; }
-                continue;
-            }
+        var result = null, problem = '', best = null;
+        for (var attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            if (attempt > 1) setLoadingText('🖌️ 字數不合，重新揮毫（第 ' + attempt + ' 次）...');
+            var raw = await callGemini(buildPrompt(keyword, words, problem), apiKey);
+            var candidate = {
+                upper: cleanLine(raw.upper),
+                lower: cleanLine(raw.lower),
+                horizontal: cleanLine(raw.horizontal),
+                analysis: String(raw.analysis || '').trim()
+            };
+            problem = validateCouplet(candidate, words);
+            if (!problem) { result = candidate; break; }
+            // 至少上下聯等長的版本可以當備案
+            if (!best || charCount(candidate.upper) === charCount(candidate.lower)) best = candidate;
         }
 
-        if (!res) throw new Error('嘗試了 ' + modelList.length + ' 個模型均失敗。最後錯誤：' + lastErr);
-
-        var data = await res.json();
-        // 取出回傳文字
-        var text = '';
-        if (data.candidates && data.candidates[0] && data.candidates[0].content &&
-            data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
-            text = data.candidates[0].content.parts[0].text || '';
-        }
-
-        if (!text) {
-            var reason = (data.candidates && data.candidates[0] && data.candidates[0].finishReason) || '未知';
-            throw new Error('回傳為空(finishReason:' + reason + ')，raw：' + JSON.stringify(data).slice(0, 200));
-        }
-
-        // 顯示原始回傳以便除錯
-        showRaw(text);
-
-        // 從第一個 { 到最後一個 } 完整抓取
-        var start = text.indexOf('{');
-        var end = text.lastIndexOf('}');
-        if (start === -1 || end === -1 || end <= start) {
-            throw new Error('找不到 JSON 括號，原始：' + text.slice(0, 150));
-        }
-        var jsonStr = text.slice(start, end + 1);
-        var jsonMatch = [jsonStr];
-        if (!jsonMatch) throw new Error('找不到 JSON，原始：' + text.slice(0, 150));
-
-        var result;
-        try { result = JSON.parse(jsonMatch[0]); }
-        catch(pe) { throw new Error('JSON解析失敗：' + pe.message + '，內容：' + jsonMatch[0].slice(0, 150)); }
-
-        if (!result.upper || !result.lower || !result.horizontal) {
-            throw new Error('欄位不完整：' + JSON.stringify(result).slice(0, 150));
+        if (!result) {
+            if (!best || !best.upper || !best.lower) throw new Error('連續 ' + MAX_ATTEMPTS + ' 次都不合格：' + problem);
+            result = best;
+            showToast('⚠️ 字數未完全符合，已顯示最接近的結果');
         }
 
         currentResult = result;
-        // 成功後隱藏原始回傳框
-        var rb = document.getElementById('raw-box');
-        if (rb) rb.style.display = 'none';
         renderCouplet();
-
-    } catch(err) {
+    } catch (err) {
         showError('生成失敗：' + err.message);
     } finally {
         setLoading(false);
@@ -479,7 +516,12 @@ function clearDisplay() {
     }
 }
 
+function setLoadingText(t) {
+    document.querySelector('#loading .pulse').textContent = t;
+}
+
 function setLoading(on) {
+    if (on) setLoadingText('🖌️ 揮毫中，請稍候...');
     document.getElementById('loading').style.display = on ? 'block' : 'none';
     // 只在開始載入時隱藏對聯，結束時不動它（由 renderCouplet 控制）
     if (on) document.getElementById('display-area').style.display = 'none';
@@ -612,7 +654,7 @@ function buildCoupletCanvas() {
 }
 
 document.getElementById('save-png-btn').addEventListener('click', function() {
-    if (!currentResult) { showToast('請先生成對聯', true); return; }
+    if (!currentResult) { showToast('請先生成對聯'); return; }
     var canvas = buildCoupletCanvas();
     var link = document.createElement('a');
     link.download = (currentResult.horizontal || '對聯') + '.png';
@@ -686,7 +728,7 @@ document.getElementById('save-svg-btn').addEventListener('click', function() {
 });
 
 document.getElementById('share-btn').addEventListener('click', async function() {
-    if (!currentResult) { showToast('請先生成對聯', true); return; }
+    if (!currentResult) { showToast('請先生成對聯'); return; }
     var r = currentResult;
     var text = '【' + r.horizontal + '】\n上聯：' + r.upper + '\n下聯：' + r.lower + '\n\n' + (r.analysis || '') + '\n\n— 墨聯 AI 生成';
 
