@@ -73,6 +73,11 @@
         }
 
         #display-area { display:none; text-align:center; animation:fadeIn 0.7s ease; }
+        #couplet-preview {
+            display:none; width:100%; height:auto; border-radius:12px; margin-bottom:16px;
+            box-shadow:0 8px 24px rgba(90,0,0,0.35); transition:opacity .3s;
+            -webkit-touch-callout:default;
+        }
         @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 
         .horizontal {
@@ -184,6 +189,8 @@
     <div id="raw-box" style="display:none;background:#111;border:1px solid #333;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;font-family:monospace;color:#aaa;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;"><b style='color:#ffd700'>📄 AI 原始回傳：</b><br><span id="raw-content"></span></div>
 
     <div id="display-area">
+        <img id="couplet-preview" alt="春聯設計圖">
+        <div id="dom-couplet">
         <div class="horizontal" id="horizontal"></div>
         <div class="pillars">
             <!-- 傳統貼法：面對大門，上聯在右、下聯在左 -->
@@ -197,6 +204,7 @@
             </div>
         </div>
         <div class="analysis" id="analysis"></div>
+        </div>
         <div class="action-row">
             <button class="btn amber" id="save-btn">⭐ 收藏</button>
             <button class="btn gray"  id="clear-btn">清除</button>
@@ -539,6 +547,7 @@ function renderCouplet() {
     document.getElementById('analysis').textContent = currentResult.analysis || '';
     document.getElementById('display-area').style.display = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    renderPreview();
 }
 
 function saveToHistory() {
@@ -637,105 +646,384 @@ if (_k) {
 
 // ── 匯出功能 ─────────────────────────────────────
 
-function buildCoupletCanvas() {
-    if (!currentResult) return null;
-    var canvas = document.getElementById('couplet-canvas');
-    var W = 600;
-    var CHAR_H = 44, CHAR_SIZE = 32;
-    var PAD_TOP = 20, HBATCH_H = 56, GAP = 16;
-    var PILLAR_W = 100, PILLAR_PAD_TOP = 18;
-    var LABEL_H = 24;
+// ── 喜氣春聯設計稿（畫面預覽、PNG、分享共用同一張圖）──────────────
+var BRUSH_FAMILY = 'LXGW WenKai TC';
+var BRUSH_STACK = '"LXGW WenKai TC","Kaiti TC","BiauKai","DFKai-SB","STKaiti","PingFang TC","Microsoft JhengHei",serif';
+var brushLinkEl = null;
 
-    // 動態計算對聯柱高度（依最長那聯字數決定）
-    var upperLen = (currentResult.upper || '').length;
-    var lowerLen = (currentResult.lower || '').length;
-    var maxLen = Math.max(upperLen, lowerLen, 4);
-    var pillarH = PILLAR_PAD_TOP * 2 + maxLen * CHAR_H;
+// 只向 Google Fonts 要這副對聯用到的字（text= 子集），通常只有幾十 KB
+function loadBrushFont(text) {
+    var chars = Array.from(new Set(Array.from(text + '福墨聯'))).join('');
+    if (brushLinkEl) brushLinkEl.parentNode.removeChild(brushLinkEl);
+    brushLinkEl = document.createElement('link');
+    brushLinkEl.rel = 'stylesheet';
+    brushLinkEl.href = 'https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@700&display=block&text=' + encodeURIComponent(chars);
+    document.head.appendChild(brushLinkEl);
+    var cssReady = new Promise(function(res) { brushLinkEl.onload = res; brushLinkEl.onerror = res; });
+    var loaded = cssReady.then(function() {
+        return document.fonts ? document.fonts.load('700 80px "' + BRUSH_FAMILY + '"', chars) : null;
+    }).catch(function() {});
+    var timeout = new Promise(function(res) { setTimeout(res, 4000); });   // 離線或太慢就用系統字
+    return Promise.race([loaded, timeout]);
+}
 
-    // 賞析高度（自動換行）
-    var analysisLines = 0;
-    if (currentResult.analysis) {
-        var testCanvas = document.createElement('canvas');
-        var testCtx = testCanvas.getContext('2d');
-        testCtx.font = '13px serif';
-        var maxW = 520, chars = currentResult.analysis.split(''), line = '';
-        chars.forEach(function(ch) {
-            if (testCtx.measureText(line + ch).width > maxW) { analysisLines++; line = ch; }
-            else { line += ch; }
-        });
-        analysisLines++;
+// 依對聯內容產生固定的亂數，同一副對聯每次灑金位置都一樣
+function seededRandom(str) {
+    var h = 1779033703 ^ str.length;
+    for (var i = 0; i < str.length; i++) {
+        h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+        h = (h << 13) | (h >>> 19);
     }
-    var analysisH = analysisLines * 22 + (analysisLines > 0 ? 20 : 0);
+    return function() {
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        h ^= h >>> 16;
+        return (h >>> 0) / 4294967296;
+    };
+}
 
-    var pillarY = PAD_TOP + HBATCH_H + GAP;
-    var H = pillarY + pillarH + LABEL_H + analysisH + 30;
+function rrect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+}
 
-    canvas.width = W; canvas.height = H;
-    var ctx = canvas.getContext('2d');
-
-    // 背景
-    ctx.fillStyle = '#f4f1ea';
+// 背景：深紅暈染＋淡金祥雲＋金色星點
+function drawBackground(ctx, W, H, rnd) {
+    var g = ctx.createRadialGradient(W / 2, H * 0.35, 60, W / 2, H * 0.45, Math.max(W, H) * 0.75);
+    g.addColorStop(0, '#c4161c');
+    g.addColorStop(0.6, '#9e0f14');
+    g.addColorStop(1, '#5e070b');
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    // 金色上下橫條
-    ctx.fillStyle = '#c9a84c';
-    ctx.fillRect(0, 0, W, 6);
-    ctx.fillRect(0, H - 6, W, 6);
+    // 祥雲紋
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,214,102,0.10)';
+    ctx.lineWidth = 3;
+    for (var y = 60; y < H; y += 150) {
+        for (var x = ((y / 150) % 2) * 90 + 40; x < W; x += 180) {
+            drawCloud(ctx, x, y, 26);
+        }
+    }
+    ctx.restore();
+
+    // 星點
+    for (var i = 0; i < 70; i++) {
+        drawSparkle(ctx, rnd() * W, rnd() * H, 3 + rnd() * 7, 'rgba(255,224,130,' + (0.25 + rnd() * 0.5) + ')');
+    }
+}
+
+function drawCloud(ctx, x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, Math.PI * 0.9, Math.PI * 2.1);
+    ctx.moveTo(x + r * 1.9, y + r * 0.35);
+    ctx.arc(x + r * 1.45, y + r * 0.35, r * 0.65, Math.PI * 1.1, Math.PI * 2.05);
+    ctx.moveTo(x - r * 0.35, y + r * 0.35);
+    ctx.arc(x - r * 1.0, y + r * 0.35, r * 0.65, Math.PI * 1.0, Math.PI * 1.95);
+    ctx.moveTo(x - r * 1.65, y + r * 0.55);
+    ctx.lineTo(x + r * 2.1, y + r * 0.55);
+    ctx.stroke();
+}
+
+function drawSparkle(ctx, x, y, r, color) {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, y - r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.quadraticCurveTo(x, y, x, y + r);
+    ctx.quadraticCurveTo(x, y, x - r, y);
+    ctx.quadraticCurveTo(x, y, x, y - r);
+    ctx.fill();
+    ctx.restore();
+}
+
+// 金色雙線外框＋四角回紋
+function drawFrame(ctx, W, H) {
+    ctx.save();
+    ctx.strokeStyle = '#f2c14e';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(22, 22, W - 44, H - 44);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(34, 34, W - 68, H - 68);
+    var corners = [[34, 34, 1, 1], [W - 34, 34, -1, 1], [34, H - 34, 1, -1], [W - 34, H - 34, -1, -1]];
+    ctx.lineWidth = 3;
+    corners.forEach(function(c) {
+        var x = c[0], y = c[1], sx = c[2], sy = c[3], s = 16;
+        ctx.beginPath();
+        ctx.moveTo(x, y + sy * s * 3);
+        ctx.lineTo(x + sx * s * 3, y + sy * s * 3);
+        ctx.lineTo(x + sx * s * 3, y + sy * s);
+        ctx.lineTo(x + sx * s, y + sy * s);
+        ctx.lineTo(x + sx * s, y + sy * s * 2);
+        ctx.lineTo(x + sx * s * 2, y + sy * s * 2);
+        ctx.stroke();
+    });
+    ctx.restore();
+}
+
+// 灑金紅紙
+function drawGoldPaper(ctx, x, y, w, h, rnd) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(40,0,0,0.55)';
+    ctx.shadowBlur = 22;
+    ctx.shadowOffsetY = 10;
+    rrect(ctx, x, y, w, h, 6);
+    var g = ctx.createLinearGradient(x, y, x + w, y + h);
+    g.addColorStop(0, '#ec3b2f');
+    g.addColorStop(0.5, '#d92a20');
+    g.addColorStop(1, '#c21f18');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    rrect(ctx, x, y, w, h, 6);
+    ctx.clip();
+    var n = Math.round(w * h / 700);
+    for (var i = 0; i < n; i++) {
+        var fx = x + rnd() * w, fy = y + rnd() * h, s = 1.5 + rnd() * 5;
+        ctx.fillStyle = 'rgba(255,' + (190 + Math.round(rnd() * 50)) + ',80,' + (0.35 + rnd() * 0.55) + ')';
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        var sides = 3 + Math.floor(rnd() * 3);
+        for (var k = 1; k <= sides; k++) {
+            var a = k / sides * Math.PI * 2 + rnd();
+            ctx.lineTo(fx + Math.cos(a) * s * (0.6 + rnd()), fy + Math.sin(a) * s * (0.6 + rnd()));
+        }
+        ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = '#f7cf5a';
+    ctx.lineWidth = 5;
+    rrect(ctx, x, y, w, h, 6); ctx.stroke();
+    ctx.lineWidth = 1.5;
+    rrect(ctx, x + 10, y + 10, w - 20, h - 20, 3); ctx.stroke();
+    ctx.restore();
+}
+
+// 濃墨書法字（墨色＋細微金邊，在灑金紙上更醒目）
+function drawInk(ctx, ch, x, y, size) {
+    ctx.save();
+    ctx.font = '700 ' + size + 'px ' + BRUSH_STACK;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(255,220,120,0.4)';
+    ctx.lineWidth = size * 0.035;
+    ctx.strokeText(ch, x, y);
+    ctx.fillStyle = '#1c0d0a';
+    ctx.fillText(ch, x, y);
+    ctx.restore();
+}
+
+// 燈籠
+function drawLantern(ctx, cx, top, r) {
+    var cy = top + 70 + r;
+    ctx.save();
+    ctx.strokeStyle = '#f2c14e'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(cx, top); ctx.lineTo(cx, cy - r * 0.95); ctx.stroke();
+    ctx.shadowColor = 'rgba(255,170,60,0.85)'; ctx.shadowBlur = 40;
+    var g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r * 1.2);
+    g.addColorStop(0, '#ff6b4a'); g.addColorStop(0.55, '#e3261b'); g.addColorStop(1, '#9c0f0f');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(cx, cy, r * 1.15, r, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,200,90,0.75)'; ctx.lineWidth = 2;
+    [0.35, 0.75].forEach(function(f) {
+        ctx.beginPath(); ctx.ellipse(cx, cy, r * 1.15 * f, r, 0, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.fillStyle = '#f2c14e';
+    rrect(ctx, cx - r * 0.5, cy - r - 14, r, 18, 4); ctx.fill();
+    rrect(ctx, cx - r * 0.5, cy + r - 4, r, 18, 4); ctx.fill();
+    ctx.strokeStyle = '#f2c14e'; ctx.lineWidth = 2;
+    for (var i = -3; i <= 3; i++) {
+        ctx.beginPath(); ctx.moveTo(cx + i * 5, cy + r + 14); ctx.lineTo(cx + i * 6, cy + r + 70); ctx.stroke();
+    }
+    ctx.font = '700 ' + Math.round(r * 0.85) + 'px ' + BRUSH_STACK;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffe08a';
+    ctx.fillText('福', cx, cy + 2);
+    ctx.restore();
+}
+
+// 梅花枝
+function drawPlum(ctx, x, y, dir, rnd, scale) {
+    ctx.save();
+    ctx.translate(x, y); ctx.scale(scale || 1, scale || 1); x = 0; y = 0;
+    ctx.strokeStyle = '#3b1e14'; ctx.lineCap = 'round';
+    ctx.lineWidth = 9;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    ctx.bezierCurveTo(x + dir * 60, y - 40, x + dir * 110, y - 120, x + dir * 190, y - 150); ctx.stroke();
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(x + dir * 90, y - 85);
+    ctx.quadraticCurveTo(x + dir * 150, y - 70, x + dir * 200, y - 40); ctx.stroke();
+    var spots = [[0.45, -0.55], [0.75, -0.85], [1.0, -0.78], [0.62, -0.38], [1.05, -0.25], [0.3, -0.25]];
+    spots.forEach(function(p) {
+        var bx = x + dir * p[0] * 190, by = y + p[1] * 170, s = 11 + rnd() * 6;
+        ctx.fillStyle = '#ffe3ea';
+        for (var k = 0; k < 5; k++) {
+            var a = k / 5 * Math.PI * 2 + rnd();
+            ctx.beginPath(); ctx.arc(bx + Math.cos(a) * s * 0.75, by + Math.sin(a) * s * 0.75, s * 0.62, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = '#f2c14e';
+        ctx.beginPath(); ctx.arc(bx, by, s * 0.32, 0, Math.PI * 2); ctx.fill();
+    });
+    ctx.restore();
+}
+
+// 朱印「墨聯」
+function drawSeal(ctx, x, y, s) {
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(-0.06);
+    ctx.fillStyle = '#c62828';
+    rrect(ctx, -s / 2, -s / 2, s, s, 6); ctx.fill();
+    ctx.strokeStyle = '#fff3e0'; ctx.lineWidth = 2;
+    rrect(ctx, -s / 2 + 5, -s / 2 + 5, s - 10, s - 10, 3); ctx.stroke();
+    ctx.fillStyle = '#fff3e0';
+    ctx.font = '700 ' + Math.round(s * 0.36) + 'px ' + BRUSH_STACK;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('墨', 0, -s * 0.2);
+    ctx.fillText('聯', 0, s * 0.2);
+    ctx.restore();
+}
+
+var NO_LINE_START = '，。、；：！？」』）》〉…,.;:!?)';
+function wrapChars(ctx, text, maxW) {
+    var lines = [], line = '';
+    Array.from(text).forEach(function(ch) {
+        // 標點不放行首：寧可讓上一行稍微超出一點
+        if (ctx.measureText(line + ch).width > maxW && line && NO_LINE_START.indexOf(ch) < 0) {
+            lines.push(line); line = ch;
+        } else line += ch;
+    });
+    if (line) lines.push(line);
+    return lines;
+}
+
+function buildCoupletCanvas() {
+    if (!currentResult) return null;
+    var r = currentResult;
+    var upper = Array.from(r.upper || ''), lower = Array.from(r.lower || '');
+    var hText = Array.from(r.horizontal || '');
+    var rnd = seededRandom((r.upper || '') + (r.lower || '') + (r.horizontal || ''));
+
+    var W = 1080;
+    var CH = 112, CS = 92;                    // 對聯每字高度、字級
+    var PW = 156;                             // 對聯寬
+    var maxLen = Math.max(upper.length, lower.length, 5);
+    var pillarH = 70 + maxLen * CH;
+    var hW = Math.min(hText.length * 118 + 110, 760), hH = 150;
+    var hY = 70;
+    var pillarY = hY + hH + 55;
+
+    // 賞析排版先量好，決定畫布高度
+    var canvas = document.getElementById('couplet-canvas');
+    var ctx = canvas.getContext('2d');
+    var analysisFont = '700 34px ' + BRUSH_STACK;
+    ctx.font = analysisFont;
+    var lines = r.analysis ? wrapChars(ctx, r.analysis, W - 300) : [];
+    var panelY = pillarY + pillarH + 60;
+    var panelH = lines.length ? lines.length * 52 + 70 : 0;
+    var H = (lines.length ? panelY + panelH : pillarY + pillarH) + 90;
+
+    canvas.width = W; canvas.height = H;
+    ctx = canvas.getContext('2d');
+
+    drawBackground(ctx, W, H, rnd);
+    drawFrame(ctx, W, H);
+
+    // 燈籠（兩側上方）
+    drawLantern(ctx, 128, 34, 58);
+    drawLantern(ctx, W - 128, 34, 58);
 
     // 橫批
-    var hText = currentResult.horizontal || '';
-    var hW = Math.min(hText.length * 48 + 60, 500);
     var hX = (W - hW) / 2;
-    ctx.fillStyle = '#c0392b';
-    ctx.beginPath(); ctx.roundRect(hX, PAD_TOP, hW, HBATCH_H, 6); ctx.fill();
-    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(hX - 1, PAD_TOP - 1, hW + 2, HBATCH_H + 2, 7); ctx.stroke();
-    ctx.fillStyle = '#ffd700';
-    ctx.font = 'bold 28px "Microsoft JhengHei","PingFang TC",serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(hText.split('').join('  '), W / 2, PAD_TOP + HBATCH_H / 2);
+    drawGoldPaper(ctx, hX, hY, hW, hH, rnd);
+    var step = (hW - 110) / hText.length;
+    hText.forEach(function(ch, i) {
+        drawInk(ctx, ch, hX + 55 + step * (i + 0.5), hY + hH / 2 + 4, 96);
+    });
 
-    var gap = 60;
-    var leftX  = W / 2 - gap / 2 - PILLAR_W;  // 下聯在左
-    var rightX = W / 2 + gap / 2;              // 上聯在右
-
-    function drawPillar(x, text, label) {
-        ctx.fillStyle = '#c0392b';
-        ctx.beginPath(); ctx.roundRect(x, pillarY, PILLAR_W, pillarH, 6); ctx.fill();
-        ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2.5;
-        ctx.beginPath(); ctx.roundRect(x - 1, pillarY - 1, PILLAR_W + 2, pillarH + 2, 7); ctx.stroke();
-        ctx.fillStyle = '#ffd700';
-        ctx.font = 'bold ' + CHAR_SIZE + 'px "Microsoft JhengHei","PingFang TC",serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        text.split('').forEach(function(ch, i) {
-            ctx.fillText(ch, x + PILLAR_W / 2, pillarY + PILLAR_PAD_TOP + i * CHAR_H);
+    // 上聯在右、下聯在左
+    var leftX = 200, rightX = W - 200 - PW;
+    [[rightX, upper], [leftX, lower]].forEach(function(p) {
+        drawGoldPaper(ctx, p[0], pillarY, PW, pillarH, rnd);
+        var offset = (maxLen - p[1].length) * CH / 2;
+        p[1].forEach(function(ch, i) {
+            drawInk(ctx, ch, p[0] + PW / 2, pillarY + 35 + offset + CH * (i + 0.5) + 4, CS);
         });
-        ctx.fillStyle = '#888';
-        ctx.font = '12px "Microsoft JhengHei","PingFang TC",sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, x + PILLAR_W / 2, pillarY + pillarH + 6);
+    });
+
+    // 中間斗方「福」
+    var dS = 190, dCx = W / 2, dCy = pillarY + 40 + dS * 0.72;
+    ctx.save();
+    ctx.translate(dCx, dCy); ctx.rotate(Math.PI / 4);
+    drawGoldPaper(ctx, -dS / 2, -dS / 2, dS, dS, rnd);
+    ctx.restore();
+    drawInk(ctx, '福', dCx, dCy + 6, 150);
+
+    // 斗方下方金色星點
+    for (var i = 0; i < 14; i++) {
+        drawSparkle(ctx, dCx + (rnd() - 0.5) * 300, dCy + 170 + rnd() * Math.max(40, pillarH - 520), 5 + rnd() * 9, 'rgba(255,224,130,' + (0.5 + rnd() * 0.5) + ')');
     }
 
-    // 傳統貼法：上聯在右、下聯在左
-    drawPillar(rightX, currentResult.upper || '', '上聯');
-    drawPillar(leftX,  currentResult.lower || '', '下聯');
-
-    // 賞析
-    if (currentResult.analysis) {
-        ctx.fillStyle = '#555';
-        ctx.font = '13px "Microsoft JhengHei","PingFang TC",sans-serif';
-        ctx.textAlign = 'center';
-        var ay = pillarY + pillarH + LABEL_H + 10;
-        var maxW = 520, chars = currentResult.analysis.split(''), line = '';
-        chars.forEach(function(ch) {
-            if (ctx.measureText(line + ch).width > maxW) {
-                ctx.fillText(line, W / 2, ay); ay += 22; line = ch;
-            } else { line += ch; }
+    // 賞析卷軸
+    if (lines.length) {
+        var pX = 110, pW = W - 220;
+        ctx.save();
+        ctx.shadowColor = 'rgba(40,0,0,0.5)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 8;
+        rrect(ctx, pX, panelY, pW, panelH, 14);
+        ctx.fillStyle = '#fbf0d9'; ctx.fill();
+        ctx.restore();
+        ctx.save();
+        ctx.strokeStyle = '#d8a93b'; ctx.lineWidth = 3;
+        rrect(ctx, pX + 8, panelY + 8, pW - 16, panelH - 16, 10); ctx.stroke();
+        ctx.font = analysisFont; ctx.fillStyle = '#5a1d14';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        lines.forEach(function(line, i) {
+            ctx.fillText(line, W / 2, panelY + 35 + 26 + i * 52);
         });
-        if (line) ctx.fillText(line, W / 2, ay);
+        ctx.restore();
+        drawSeal(ctx, pX + pW - 18, panelY + panelH - 12, 78);
     }
+
+    // 兩聯之間下方：一對梅花枝
+    var plumY = pillarY + pillarH - 6;
+    drawPlum(ctx, W / 2 - 8, plumY, -1, rnd, 0.88);
+    drawPlum(ctx, W / 2 + 8, plumY, 1, rnd, 0.88);
 
     return canvas;
+}
+
+// 畫面預覽：等字型載好再畫，畫面上看到的就是存下來的圖
+var previewToken = 0;
+async function renderPreview() {
+    var r = currentResult;
+    if (!r) return;
+    var token = ++previewToken;
+    var img = document.getElementById('couplet-preview');
+    img.style.opacity = '0.35';
+    await loadBrushFont((r.upper || '') + (r.lower || '') + (r.horizontal || '') + (r.analysis || ''));
+    if (token !== previewToken) return;          // 期間又產生了新的對聯
+    try {
+        var canvas = buildCoupletCanvas();
+        img.src = canvas.toDataURL('image/png');
+        img.style.opacity = '1';
+        document.getElementById('dom-couplet').style.display = 'none';
+        img.style.display = 'block';
+    } catch (e) {
+        console.warn('[moLian] 預覽繪製失敗，改用文字版：', e);
+        img.style.display = 'none';
+        document.getElementById('dom-couplet').style.display = 'block';
+    }
 }
 
 document.getElementById('save-png-btn').addEventListener('click', function() {
