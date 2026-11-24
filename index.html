@@ -47,6 +47,14 @@
             font-size:13px; font-family:monospace; background:white;
         }
         #apikey-section .hint { font-size:11px; color:#aaa; margin-bottom:8px; }
+        #advanced { margin-bottom:16px; }
+        #advanced summary {
+            font-size:13px; color:#999; cursor:pointer; padding:4px 0;
+            list-style:none; -webkit-user-select:none; user-select:none;
+        }
+        #advanced summary::-webkit-details-marker { display:none; }
+        #advanced[open] summary { margin-bottom:8px; }
+        #advanced #apikey-section { margin-bottom:0; }
 
         #model-list {
             display:none; background:#e8f5e9; border:1px solid #a5d6a7;
@@ -139,12 +147,15 @@
 
     <header>
         <h1>🖋️ 墨聯 AI 產生器</h1>
-        <p>輸入關鍵字，由 AI 生成專屬對聯</p>
+        <p>輸入關鍵字，由 AI 生成專屬對聯・免申請、直接用</p>
     </header>
 
+    <details id="advanced">
+    <summary>⚙️ 進階：使用自己的 Gemini Key（選填）</summary>
     <div id="apikey-section">
         <div class="guide">
-            🔑 需要 Gemini API Key：前往 <b>aistudio.google.com</b> → Get API Key → 複製貼入
+            平常不用填。只有雲端服務忙碌時，才會改用這把 Key 當備援。<br>
+            申請方式：<b>aistudio.google.com</b> → Get API Key → 複製貼入
         </div>
         <div class="row">
             <input type="password" id="apikey" placeholder="AIzaSy...">
@@ -154,6 +165,7 @@
         <div id="model-list"></div>
         <button class="btn green" id="check-key-btn" style="width:100%;padding:8px;font-size:13px;">🔍 查詢可用模型</button>
     </div>
+    </details>
 
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
         <span style="font-size:13px;color:#888;">字數：</span>
@@ -315,7 +327,74 @@ function validateCouplet(r, words) {
     return problems.join('；');
 }
 
-// 依序嘗試模型，回傳解析好的物件
+// ── 主要來源：arcar Worker 代理 Claude（金鑰在 Worker，前端不用填）──
+var ARCAR_URL = 'https://arcar.kftseng2oo1.workers.dev/v1/messages';
+var ARCAR_MODEL = 'claude-sonnet-5-5';
+var COUPLET_TOOL = {
+    name: 'submit_couplet',
+    description: '提交創作好的對聯',
+    input_schema: {
+        type: 'object',
+        properties: {
+            upper:      { type: 'string', description: '上聯，只含漢字，不含標點' },
+            lower:      { type: 'string', description: '下聯，只含漢字，不含標點，字數與上聯相同' },
+            horizontal: { type: 'string', description: '橫批，4 個漢字' },
+            analysis:   { type: 'string', description: '賞析，30 至 50 字' }
+        },
+        required: ['upper', 'lower', 'horizontal', 'analysis']
+    }
+};
+
+async function callArcar(prompt) {
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, 40000);
+    try {
+        var r = await fetch(ARCAR_URL, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: ARCAR_MODEL,
+                max_tokens: 1024,
+                temperature: 0.8,
+                tools: [COUPLET_TOOL],
+                tool_choice: { type: 'tool', name: 'submit_couplet' },
+                messages: [{ role: 'user', content: prompt }]
+            })
+        });
+        var data = await r.json().catch(function() { return {}; });
+        if (!r.ok) {
+            var msg = (data.error && (data.error.message || data.error)) || ('HTTP ' + r.status);
+            throw new Error('雲端服務：' + msg);
+        }
+        var block = (data.content || []).filter(function(b) { return b.type === 'tool_use'; })[0];
+        if (!block || !block.input) throw new Error('雲端服務回傳格式不符');
+        return block.input;
+    } catch (e) {
+        if (e.name === 'AbortError') throw new Error('雲端服務逾時(40s)');
+        throw e;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+// 先走 arcar；失敗時，若使用者有填自己的 Gemini Key 才改用 Gemini
+async function callAI(prompt) {
+    try {
+        return await callArcar(prompt);
+    } catch (arcarErr) {
+        var key = document.getElementById('apikey').value.trim() || getApiKey();
+        if (!key) throw arcarErr;
+        console.warn('[moLian] arcar 失敗，改用 Gemini：', arcarErr.message);
+        try {
+            return await callGemini(prompt, key);
+        } catch (gemErr) {
+            throw new Error(arcarErr.message + '；Gemini 備援也失敗：' + gemErr.message);
+        }
+    }
+}
+
+// 依序嘗試 Gemini 模型（備援用），回傳解析好的物件
 async function callGemini(prompt, apiKey) {
     var modelList = discoveredModels.length > 0 ? discoveredModels : MODELS;
     var lastErr = '';
@@ -396,9 +475,6 @@ function buildPrompt(keyword, words, feedback) {
 async function generateAction() {
     var keyword = document.getElementById('keyword').value.trim();
     if (!keyword) { showToast('請輸入關鍵字'); return; }
-    var apiKey = document.getElementById('apikey').value.trim() || getApiKey();
-    if (!apiKey) { showError('請先填入 Gemini API Key'); return; }
-    localStorage.setItem('gemini_api_key', apiKey);
 
     setLoading(true);
     hideError();
@@ -409,7 +485,7 @@ async function generateAction() {
         var result = null, problem = '', best = null;
         for (var attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             if (attempt > 1) setLoadingText('🖌️ 字數不合，重新揮毫（第 ' + attempt + ' 次）...');
-            var raw = await callGemini(buildPrompt(keyword, words, problem), apiKey);
+            var raw = await callAI(buildPrompt(keyword, words, problem));
             var candidate = {
                 upper: cleanLine(raw.upper),
                 lower: cleanLine(raw.lower),
