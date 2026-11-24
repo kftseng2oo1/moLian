@@ -91,6 +91,11 @@
             color:#444; line-height:1.9; text-align:left; margin-bottom:16px;
         }
         .action-row { display:flex; gap:10px; justify-content:center; margin-bottom:8px; }
+        .export-row { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:8px; }
+        .export-row .btn { flex:1; min-width:96px; padding:10px 12px; font-size:14px; }
+        .btn.blue  { background:#1565c0; }
+        .btn.teal  { background:#00897b; }
+        .btn.share { background:#6d4c41; }
         .divider { border:none; border-top:2px dashed #ccc; margin:36px 0 20px; }
         .history-header { text-align:center; font-size:17px; font-weight:bold; color:#444; margin-bottom:8px; }
         .history-hint { text-align:center; font-size:12px; color:#bbb; margin-bottom:12px; }
@@ -126,7 +131,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="AI 對聯">
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <script>if('serviceWorker'in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').then(function(r){console.log('[SW] registered:',r.scope)}).catch(function(e){console.warn('[SW] failed:',e)});});}</script>
 </head>
 <body>
@@ -169,13 +174,14 @@
     <div id="display-area">
         <div class="horizontal" id="horizontal"></div>
         <div class="pillars">
-            <div class="pillar-wrap">
-                <div class="pillar" id="upper"></div>
-                <div class="pillar-label">上聯</div>
-            </div>
+            <!-- 傳統貼法：面對大門，上聯在右、下聯在左 -->
             <div class="pillar-wrap">
                 <div class="pillar" id="lower"></div>
                 <div class="pillar-label">下聯</div>
+            </div>
+            <div class="pillar-wrap">
+                <div class="pillar" id="upper"></div>
+                <div class="pillar-label">上聯</div>
             </div>
         </div>
         <div class="analysis" id="analysis"></div>
@@ -307,17 +313,19 @@ async function generateAction() {
                 var controller = new AbortController();
                 var timeoutId = setTimeout(function() { controller.abort(); }, 30000);
 
+                // 只有 flash 系列可以把 thinking 關掉；pro 系列設 0 會回 400，
+                // 且 thinking 會吃掉輸出 token，所以給較大的上限
+                var canDisableThinking = model.indexOf('flash') >= 0;
+                var genConfig = { temperature: 0.8, maxOutputTokens: canDisableThinking ? 1024 : 4096 };
+                if (canDisableThinking) genConfig.thinkingConfig = { thinkingBudget: 0 };
+
                 var r = await fetch(url, {
                     method: 'POST',
                     signal: controller.signal,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: {
-                            temperature: 0.8,
-                            maxOutputTokens: 1024,
-                            thinkingConfig: { thinkingBudget: 0 }
-                        }
+                        generationConfig: genConfig
                     })
                 });
                 clearTimeout(timeoutId);
@@ -560,10 +568,9 @@ function buildCoupletCanvas() {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(hText.split('').join('  '), W / 2, PAD_TOP + HBATCH_H / 2);
 
-    // 上聯（左）、下聯（右）
     var gap = 60;
-    var leftX  = W / 2 - gap / 2 - PILLAR_W;  // 上聯在左
-    var rightX = W / 2 + gap / 2;              // 下聯在右
+    var leftX  = W / 2 - gap / 2 - PILLAR_W;  // 下聯在左
+    var rightX = W / 2 + gap / 2;              // 上聯在右
 
     function drawPillar(x, text, label) {
         ctx.fillStyle = '#c0392b';
@@ -582,8 +589,9 @@ function buildCoupletCanvas() {
         ctx.fillText(label, x + PILLAR_W / 2, pillarY + pillarH + 6);
     }
 
-    drawPillar(leftX,  currentResult.upper || '', '上聯');
-    drawPillar(rightX, currentResult.lower || '', '下聯');
+    // 傳統貼法：上聯在右、下聯在左
+    drawPillar(rightX, currentResult.upper || '', '上聯');
+    drawPillar(leftX,  currentResult.lower || '', '下聯');
 
     // 賞析
     if (currentResult.analysis) {
@@ -613,38 +621,60 @@ document.getElementById('save-png-btn').addEventListener('click', function() {
     showToast('✅ PNG 已儲存');
 });
 
+function escXml(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
 document.getElementById('save-svg-btn').addEventListener('click', function() {
-    if (!currentResult) { showToast('請先生成對聯', true); return; }
+    if (!currentResult) { showToast('請先生成對聯'); return; }
     var r = currentResult;
-    var maxLen = Math.max((r.upper||'').length, (r.lower||'').length, 4);
-    var pillarH = 36 + maxLen * 44;
-    var pillarY = 92;
-    var svgH = pillarY + pillarH + 30 + 60;
+    var W = 600;
+    var FONT_TC = 'Microsoft JhengHei,PingFang TC,serif';
+    var upper = Array.from(r.upper || ''), lower = Array.from(r.lower || '');
+    var hText = Array.from(r.horizontal || '');
+    var maxLen = Math.max(upper.length, lower.length, 4);
+    var pillarY = 92, pillarH = 36 + maxLen * 44;
     var labelY = pillarY + pillarH + 16;
-    var leftX = 155, rightX = 345;
-    var upperChars = (r.upper||'').split('').map(function(ch,i){
-        return '<text x="'+(leftX+50)+'" y="'+(pillarY+18+i*44)+'" text-anchor="middle" font-size="32" font-weight="bold" fill="#ffd700">'+ch+'</text>';
+
+    // 賞析換行（以字數估算，每行約 36 字）
+    var analysisLines = [];
+    var an = Array.from(r.analysis || '');
+    for (var k = 0; k < an.length; k += 36) analysisLines.push(an.slice(k, k + 36).join(''));
+    var analysisH = analysisLines.length ? analysisLines.length * 22 + 20 : 0;
+    var svgH = labelY + 14 + analysisH + 30;
+
+    // 橫批寬度依字數調整（與 PNG 一致）
+    var hW = Math.min(hText.length * 48 + 60, 500), hX = (W - hW) / 2;
+    var leftX = W / 2 - 30 - 100;   // 下聯在左
+    var rightX = W / 2 + 30;        // 上聯在右
+
+    function pillar(x, chars, label) {
+        return '<rect x="'+x+'" y="'+pillarY+'" width="100" height="'+pillarH+'" rx="6" fill="#c0392b"/>'
+            + '<rect x="'+(x-1)+'" y="'+(pillarY-1)+'" width="102" height="'+(pillarH+2)+'" rx="7" fill="none" stroke="#ffd700" stroke-width="2.5"/>'
+            + chars.map(function(ch, i) {
+                return '<text x="'+(x+50)+'" y="'+(pillarY+18+i*44+16)+'" text-anchor="middle" dominant-baseline="middle" font-family="'+FONT_TC+'" font-size="32" font-weight="bold" fill="#ffd700">'+escXml(ch)+'</text>';
+            }).join('')
+            + '<text x="'+(x+50)+'" y="'+(labelY+10)+'" text-anchor="middle" font-family="'+FONT_TC+'" font-size="12" fill="#888">'+label+'</text>';
+    }
+
+    var analysisSvg = analysisLines.map(function(line, i) {
+        return '<text x="'+(W/2)+'" y="'+(labelY + 34 + i*22)+'" text-anchor="middle" font-family="'+FONT_TC+'" font-size="13" fill="#555">'+escXml(line)+'</text>';
     }).join('');
-    var lowerChars = (r.lower||'').split('').map(function(ch,i){
-        return '<text x="'+(rightX+50)+'" y="'+(pillarY+18+i*44)+'" text-anchor="middle" font-size="32" font-weight="bold" fill="#ffd700">'+ch+'</text>';
-    }).join('');
+
     var svg = '<?xml version="1.0" encoding="UTF-8"?>'
-        + '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="'+svgH+'">'
-        + '<rect width="600" height="'+svgH+'" fill="#f4f1ea"/>'
-        + '<rect width="600" height="6" fill="#c9a84c"/>'
-        + '<rect y="'+(svgH-6)+'" width="600" height="6" fill="#c9a84c"/>'
-        + '<rect x="160" y="20" width="280" height="56" rx="6" fill="#c0392b"/>'
-        + '<rect x="159" y="19" width="282" height="58" rx="7" fill="none" stroke="#ffd700" stroke-width="2"/>'
-        + '<text x="300" y="53" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft JhengHei,PingFang TC,serif" font-size="28" font-weight="bold" fill="#ffd700">'
-        + (r.horizontal||'').split('').join(' ') + '</text>'
-        + '<rect x="'+leftX+'" y="'+pillarY+'" width="100" height="'+pillarH+'" rx="6" fill="#c0392b"/>'
-        + '<rect x="'+(leftX-1)+'" y="'+(pillarY-1)+'" width="102" height="'+(pillarH+2)+'" rx="7" fill="none" stroke="#ffd700" stroke-width="2.5"/>'
-        + upperChars
-        + '<text x="'+(leftX+50)+'" y="'+labelY+'" text-anchor="middle" font-family="Microsoft JhengHei,PingFang TC,sans-serif" font-size="12" fill="#888">上聯</text>'
-        + '<rect x="'+rightX+'" y="'+pillarY+'" width="100" height="'+pillarH+'" rx="6" fill="#c0392b"/>'
-        + '<rect x="'+(rightX-1)+'" y="'+(pillarY-1)+'" width="102" height="'+(pillarH+2)+'" rx="7" fill="none" stroke="#ffd700" stroke-width="2.5"/>'
-        + lowerChars
-        + '<text x="'+(rightX+50)+'" y="'+labelY+'" text-anchor="middle" font-family="Microsoft JhengHei,PingFang TC,sans-serif" font-size="12" fill="#888">下聯</text>'
+        + '<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+svgH+'" viewBox="0 0 '+W+' '+svgH+'">'
+        + '<rect width="'+W+'" height="'+svgH+'" fill="#f4f1ea"/>'
+        + '<rect width="'+W+'" height="6" fill="#c9a84c"/>'
+        + '<rect y="'+(svgH-6)+'" width="'+W+'" height="6" fill="#c9a84c"/>'
+        + '<rect x="'+hX+'" y="20" width="'+hW+'" height="56" rx="6" fill="#c0392b"/>'
+        + '<rect x="'+(hX-1)+'" y="19" width="'+(hW+2)+'" height="58" rx="7" fill="none" stroke="#ffd700" stroke-width="2"/>'
+        + '<text x="'+(W/2)+'" y="48" text-anchor="middle" dominant-baseline="middle" font-family="'+FONT_TC+'" font-size="28" font-weight="bold" fill="#ffd700">'
+        + escXml(hText.join(' ')) + '</text>'
+        + pillar(rightX, upper, '上聯')
+        + pillar(leftX, lower, '下聯')
+        + analysisSvg
         + '</svg>';
     var blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
     var url = URL.createObjectURL(blob);
