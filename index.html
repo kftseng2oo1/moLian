@@ -19,6 +19,26 @@
         header p { font-size:14px; color:#888; margin-top:4px; }
 
         .input-row { display:flex; gap:10px; margin-bottom:16px; }
+
+        /* AI 生成 / 自己寫 切換 */
+        .mode-tabs { display:flex; background:#ece7dd; border-radius:12px; padding:4px; margin-bottom:14px; }
+        .mode-tab {
+            flex:1; padding:10px 0; border:none; border-radius:9px; background:transparent;
+            font-size:15px; font-weight:bold; color:#777; font-family:inherit; cursor:pointer;
+        }
+        .mode-tab.active { background:white; color:var(--red); box-shadow:0 1px 4px rgba(0,0,0,0.12); }
+        #manual-panel { display:none; margin-bottom:16px; }
+        .manual-field { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+        .manual-field label { width:42px; font-size:15px; color:#555; font-weight:bold; flex-shrink:0; }
+        .manual-field input {
+            flex:1; min-width:0; padding:12px 14px; border:2px solid #ccc; border-radius:10px;
+            font-size:18px; font-family:inherit; outline:none; letter-spacing:2px;
+        }
+        .manual-field input:focus { border-color:var(--red); }
+        .manual-field .count { width:34px; text-align:right; font-size:12px; color:#aaa; flex-shrink:0; }
+        .manual-field .count.bad { color:var(--red); font-weight:bold; }
+        .manual-hint { font-size:12px; color:#999; margin:2px 0 12px; line-height:1.6; }
+        #manual-btn { width:100%; padding:14px; font-size:17px; }
         .input-row input {
             flex:1; padding:12px 14px; border:2px solid #ccc; border-radius:10px;
             font-size:16px; font-family:inherit; outline:none;
@@ -179,6 +199,32 @@
     </div>
     </details>
 
+    <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="ai">🤖 AI 生成</button>
+        <button class="mode-tab" data-mode="manual">✍️ 自己寫</button>
+    </div>
+
+    <div id="manual-panel">
+        <div class="manual-field">
+            <label for="m-horizontal">橫批</label>
+            <input type="text" id="m-horizontal" placeholder="例如：萬象更新" maxlength="8" autocomplete="off">
+            <span class="count" id="c-horizontal">0</span>
+        </div>
+        <div class="manual-field">
+            <label for="m-upper">上聯</label>
+            <input type="text" id="m-upper" placeholder="例如：春回大地千山秀" maxlength="14" autocomplete="off">
+            <span class="count" id="c-upper">0</span>
+        </div>
+        <div class="manual-field">
+            <label for="m-lower">下聯</label>
+            <input type="text" id="m-lower" placeholder="例如：福滿人間萬戶歡" maxlength="14" autocomplete="off">
+            <span class="count" id="c-lower">0</span>
+        </div>
+        <div class="manual-hint">上聯貼右邊、下聯貼左邊；上下聯字數要相同（最多 12 字），橫批 2–6 字。標點會自動去掉。</div>
+        <button class="btn" id="manual-btn">🧧 製作春聯</button>
+    </div>
+
+    <div id="ai-panel">
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
         <span style="font-size:13px;color:#888;">字數：</span>
         <button class="words-btn active" data-words="5">五字</button>
@@ -189,6 +235,7 @@
     <div class="input-row">
         <input type="text" id="keyword" placeholder="例如：新家、恭喜、台中...">
         <button class="btn" id="gen-btn">生成對聯</button>
+    </div>
     </div>
 
     <div id="loading"><span class="pulse">🖌️ 揮毫中，請稍候...</span></div>
@@ -554,11 +601,75 @@ function renderCouplet() {
     document.getElementById('upper').textContent = currentResult.upper;
     document.getElementById('lower').textContent = currentResult.lower;
     document.getElementById('horizontal').textContent = currentResult.horizontal;
-    document.getElementById('analysis').textContent = currentResult.analysis || '';
+    var anEl = document.getElementById('analysis');
+    anEl.textContent = currentResult.analysis || '';
+    anEl.style.display = currentResult.analysis ? '' : 'none';
     document.getElementById('display-area').style.display = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
     renderPreview();
 }
+
+// ── 自己寫：輸入上下聯、橫批，直接做成春聯圖 ─────────────
+function setMode(mode) {
+    document.querySelectorAll('.mode-tab').forEach(function(t) {
+        t.classList.toggle('active', t.getAttribute('data-mode') === mode);
+    });
+    document.getElementById('ai-panel').style.display = mode === 'ai' ? '' : 'none';
+    document.getElementById('manual-panel').style.display = mode === 'manual' ? 'block' : 'none';
+    hideError();
+    // 切到自己寫時，若畫面上已有對聯，帶入方便修改
+    if (mode === 'manual' && currentResult &&
+        !document.getElementById('m-upper').value && !document.getElementById('m-lower').value) {
+        document.getElementById('m-upper').value = currentResult.upper || '';
+        document.getElementById('m-lower').value = currentResult.lower || '';
+        document.getElementById('m-horizontal').value = currentResult.horizontal || '';
+        updateManualCounts();
+    }
+    try { localStorage.setItem('molian_mode', mode); } catch (e) {}
+}
+
+function updateManualCounts() {
+    var u = charCount(cleanLine(document.getElementById('m-upper').value));
+    var l = charCount(cleanLine(document.getElementById('m-lower').value));
+    var h = charCount(cleanLine(document.getElementById('m-horizontal').value));
+    var cu = document.getElementById('c-upper'), cl = document.getElementById('c-lower'), ch = document.getElementById('c-horizontal');
+    cu.textContent = u; cl.textContent = l; ch.textContent = h;
+    var mismatch = u && l && u !== l;
+    cu.classList.toggle('bad', mismatch || u > 12);
+    cl.classList.toggle('bad', mismatch || l > 12);
+    ch.classList.toggle('bad', h > 6 || h === 1);
+}
+
+function makeManualCouplet() {
+    var upper = cleanLine(document.getElementById('m-upper').value);
+    var lower = cleanLine(document.getElementById('m-lower').value);
+    var horizontal = cleanLine(document.getElementById('m-horizontal').value);
+    var u = charCount(upper), l = charCount(lower), h = charCount(horizontal);
+    if (!u || !l) { showError('請輸入上聯和下聯'); return; }
+    if (!h) { showError('請輸入橫批'); return; }
+    if (u !== l) { showError('上聯 ' + u + ' 字、下聯 ' + l + ' 字，字數要相同'); return; }
+    if (u > 12) { showError('上下聯最多 12 字'); return; }
+    if (h < 2 || h > 6) { showError('橫批請輸入 2 到 6 個字'); return; }
+    hideError();
+    if (document.activeElement) document.activeElement.blur();   // 收起 iOS 鍵盤
+    currentResult = { upper: upper, lower: lower, horizontal: horizontal, analysis: '' };
+    renderCouplet();
+}
+
+document.querySelectorAll('.mode-tab').forEach(function(t) {
+    t.addEventListener('click', function() { setMode(t.getAttribute('data-mode')); });
+});
+['m-upper', 'm-lower', 'm-horizontal'].forEach(function(id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', updateManualCounts);
+    el.addEventListener('keydown', function(e) { if (e.key === 'Enter') makeManualCouplet(); });
+});
+document.getElementById('manual-btn').addEventListener('click', makeManualCouplet);
+(function() {
+    var m = null;
+    try { m = localStorage.getItem('molian_mode'); } catch (e) {}
+    if (m === 'manual') setMode('manual');
+})();
 
 function saveToHistory() {
     if (!currentResult) return;
@@ -952,7 +1063,7 @@ function buildCoupletCanvas() {
     var PW = 156;                             // 對聯寬
     var maxLen = Math.max(upper.length, lower.length, 5);
     var pillarH = 70 + maxLen * CH;
-    var hW = Math.min(hText.length * 118 + 110, 760), hH = 150;
+    var hW = Math.min(hText.length * 118 + 110, 660), hH = 150;   // 660：不壓到兩側燈籠
     var hY = 70;
     var pillarY = hY + hH + 55;
 
@@ -974,7 +1085,7 @@ function buildCoupletCanvas() {
     drawGoldPaper(ctx, hX, hY, hW, hH, rnd);
     var step = (hW - 110) / hText.length;
     hText.forEach(function(ch, i) {
-        drawInk(ctx, ch, hX + 55 + step * (i + 0.5), hY + hH / 2 + 4, 96);
+        drawInk(ctx, ch, hX + 55 + step * (i + 0.5), hY + hH / 2 + 4, Math.min(96, step * 0.86));
     });
 
     // 上聯在右、下聯在左
