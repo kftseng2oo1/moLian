@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>墨聯 AI 對聯產生器</title>
     <style>
         :root { --red:#d32f2f; --dark-red:#b71c1c; --gold:#ffd700; --bg:#f4f1ea; }
@@ -44,7 +44,7 @@
         #apikey-section .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
         #apikey-section input {
             flex:1; padding:10px 12px; border:1px solid #fbc02d; border-radius:8px;
-            font-size:13px; font-family:monospace; background:white;
+            font-size:16px; font-family:monospace; background:white;
         }
         #apikey-section .hint { font-size:11px; color:#aaa; margin-bottom:8px; }
         #advanced { margin-bottom:16px; }
@@ -220,7 +220,7 @@
 <script>
 var currentResult = null;
 var toastTimer = null;
-var MODELS = ['gemini-2.5-flash','gemini-2.5-pro'];
+var MODELS = ['gemini-flash-latest','gemini-2.5-flash','gemini-3.5-flash'];
 var discoveredModels = []; // 查詢可用模型後動態填入
 
 function getApiKey() {
@@ -255,14 +255,17 @@ document.getElementById('check-key-btn').addEventListener('click', async functio
                        m.name.indexOf('image') < 0 &&
                        m.name.indexOf('tts') < 0 &&
                        m.name.indexOf('robotics') < 0 &&
-                       m.name.indexOf('computer-use') < 0;
+                       m.name.indexOf('computer-use') < 0 &&
+                       m.name.indexOf('banana') < 0 &&
+                       m.name.indexOf('transcribe') < 0 &&
+                       m.name.indexOf('customtools') < 0;
             })
             .map(function(m) { return m.name.replace('models/', ''); });
 
         discoveredModels = all;
 
         // 優先順序：2.5-flash > 2.5-pro > 其他（gemini-2.0 已於 2026-06-01 關閉）
-        var priority = ['gemini-2.5-flash','gemini-2.5-pro'];
+        var priority = ['gemini-flash-latest','gemini-2.5-flash','gemini-3.5-flash'];
         var sorted = [];
         priority.forEach(function(p) {
             if (all.indexOf(p) >= 0) sorted.push(p);
@@ -356,10 +359,9 @@ async function callArcar(prompt) {
             body: JSON.stringify({
                 model: ARCAR_MODEL,
                 max_tokens: 1024,
-                temperature: 0.8,
                 tools: [COUPLET_TOOL],
-                tool_choice: { type: 'tool', name: 'submit_couplet' },
-                messages: [{ role: 'user', content: prompt }]
+                tool_choice: { type: 'auto' },
+                messages: [{ role: 'user', content: prompt + '\n\n請呼叫 submit_couplet 工具提交結果。' }]
             })
         });
         var data = await r.json().catch(function() { return {}; });
@@ -368,8 +370,15 @@ async function callArcar(prompt) {
             throw new Error('雲端服務：' + msg);
         }
         var block = (data.content || []).filter(function(b) { return b.type === 'tool_use'; })[0];
-        if (!block || !block.input) throw new Error('雲端服務回傳格式不符');
-        return block.input;
+        if (block && block.input) return block.input;
+        // 模型沒呼叫工具時，改從文字中解析 JSON
+        var text = (data.content || []).filter(function(b) { return b.type === 'text'; })
+            .map(function(b) { return b.text; }).join('');
+        var s = text.indexOf('{'), en = text.lastIndexOf('}');
+        if (s >= 0 && en > s) {
+            try { return JSON.parse(text.slice(s, en + 1)); } catch (pe) {}
+        }
+        throw new Error('雲端服務回傳格式不符');
     } catch (e) {
         if (e.name === 'AbortError') throw new Error('雲端服務逾時(40s)');
         throw e;
@@ -397,7 +406,7 @@ async function callAI(prompt) {
 // 依序嘗試 Gemini 模型（備援用），回傳解析好的物件
 async function callGemini(prompt, apiKey) {
     var modelList = discoveredModels.length > 0 ? discoveredModels : MODELS;
-    var lastErr = '';
+    var errs = [];
     for (var i = 0; i < modelList.length; i++) {
         var model = modelList[i];
         var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
@@ -426,14 +435,14 @@ async function callGemini(prompt, apiKey) {
             });
             if (!r.ok) {
                 var e = await r.json().catch(function() { return {}; });
-                lastErr = model + ':HTTP' + r.status + '(' + ((e.error && e.error.message) || '?') + ')';
+                errs.push(model + ':HTTP' + r.status + '(' + ((e.error && e.error.message) || '?') + ')');
                 continue;
             }
             var data = await r.json();
             var c = data.candidates && data.candidates[0];
             var text = (c && c.content && c.content.parts || []).map(function(p) { return p.text || ''; }).join('');
             if (!text) {
-                lastErr = model + ':回傳為空(finishReason:' + ((c && c.finishReason) || '未知') + ')';
+                errs.push(model + ':回傳為空(finishReason:' + ((c && c.finishReason) || '未知') + ')');
                 continue;
             }
             try {
@@ -445,17 +454,17 @@ async function callGemini(prompt, apiKey) {
                     try { return JSON.parse(text.slice(s, en + 1)); } catch (pe2) {}
                 }
                 showRaw(text);
-                lastErr = model + ':JSON 解析失敗';
+                errs.push(model + ':JSON 解析失敗');
                 continue;
             }
         } catch (fe) {
-            lastErr = fe.name === 'AbortError' ? model + ' 逾時(30s)' : (model + ':' + fe.message);
+            errs.push(fe.name === 'AbortError' ? model + ' 逾時(30s)' : (model + ':' + fe.message));
             continue;
         } finally {
             clearTimeout(timeoutId);
         }
     }
-    throw new Error('嘗試了 ' + modelList.length + ' 個模型均失敗。最後錯誤：' + lastErr);
+    throw new Error('嘗試了 ' + modelList.length + ' 個模型均失敗：' + errs.join('／'));
 }
 
 function buildPrompt(keyword, words, feedback) {
